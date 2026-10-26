@@ -1,0 +1,5 @@
+kind,t,detail
+fault_onset,60.0,OBSTACLE_APPEARS on world
+fault_detected,61.953,OBSTACLE_APPEARS by costmap:lidar_marked (latency 1.95s)
+state_transition,146.96,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 278.9 m"

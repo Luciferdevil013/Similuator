@@ -1,0 +1,12 @@
+base: drone_baseline.yaml
+id: drone_gnss_spoof
+description: >
+  GNSS position jumps 25 m sideways (spoof-like inconsistency). The integrity
+  monitor should reject the fixes; the drone must not chase the false position.
+faults:
+  - type: GNSS_INCONSISTENCY
+    target: gnss
+    onset: 30.0
+    duration: 20.0
+    params: {offset: [0.0, 25.0, 0.0], drift_per_s: [0.0, 0.0, 0.0]}
+    label: 25 m step offset

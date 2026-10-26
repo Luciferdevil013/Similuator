@@ -106,7 +106,20 @@ def world_static(runner) -> dict:
             "description": runner.cfg.description,
             "seed": int(runner.cfg.seed),
             "duration_s": _f(runner.cfg.duration),
+            "environment": runner.cfg.environment,
         },
+        "vehicle": {
+            "type": getattr(runner, "vehicle_type", "ugv"),
+            "cruise_agl": (float(runner.controller.cfg.cruise_agl)
+                           if getattr(runner, "vehicle_type", "ugv") == "drone" else None),
+        },
+        # Declared windows are the SCORING TRUTH: when each fault really ran,
+        # independent of whether anything noticed. The dashboard draws these
+        # against the monitor's detection times so the latency is visible as a
+        # gap rather than asserted as a number.
+        "fault_windows": [
+            {"onset": _f(a), "end": _f(b), "type": FaultType(k).name}
+            for a, b, k in runner.injector.active_windows()],
         "faults_declared": [
             {"type": s.fault_type.name, "target": s.target,
              "onset": _f(s.onset), "duration": _f(s.duration),
@@ -200,6 +213,13 @@ def snapshot(runner, *, include_truth: bool = True,
         # version and omitted while unchanged -- it is the largest field in
         # the frame and the dashboard already has it.
         "path_version": int(runner.replan_count),
+        # Mission-state history and the full fault record, not just what is
+        # live right now. Both are short -- a run produces a handful of
+        # transitions -- and sending them whole keeps the dashboard correct
+        # after a reconnect instead of having it reassemble a timeline from
+        # frames it may have missed.
+        "transitions": list(runner.resilience.transitions),
+        "fault_history": runner.injector.summary(),
     }
 
     if ctl is not None:
@@ -234,6 +254,24 @@ def snapshot(runner, *, include_truth: bool = True,
             "temperature": _f(getattr(bat, "temperature", 0.0)),
         }
 
+    if getattr(runner, "vehicle_type", "ugv") == "drone":
+        v = runner.vehicle
+        c = getattr(runner, "last_control", None)
+        out["drone"] = {
+            "phase": c.phase if c else "PREFLIGHT",
+            "armed": bool(v.armed),
+            "landed_estimate": bool(runner._landed_est),
+            "agl_estimate_m": _f(c.agl_estimate) if c else None,
+            "alt_setpoint_m": _f(c.alt_setpoint) if c else None,
+            "est_altitude_m": _f(ekf.p[2]),
+            "vertical_speed_mps": _f(ekf.v[2]),
+            "thrust_ratio": _f(v.thrust / max(v.weight, 1e-6)),
+            "tilt_cmd_deg": _f(math.degrees(max(abs(c.roll_cmd), abs(c.pitch_cmd)))) if c else 0.0,
+            "baro_excluded": bool(getattr(runner, "baro_excluded", False)),
+            "rangefinder_m": (_f(runner.latest_range.range)
+                              if getattr(runner, "latest_range", None) is not None else None),
+        }
+
     if include_truth:
         # Scoring and display only. Never an input to navigation.
         truth = runner.ugv.truth(t)
@@ -245,6 +283,10 @@ def snapshot(runner, *, include_truth: bool = True,
             "pitch_deg": _f(math.degrees(runner.ugv.pitch)),
             "speed": _f(runner.ugv.v),
             "position_error_m": _f(np.linalg.norm(ekf.p[:2] - np.asarray(truth.p)[:2])),
+            "agl_m": _f(getattr(runner.ugv, "agl", 0.0)),
+            "wind": (_vec(runner.vehicle.wind())
+                     if getattr(runner, "vehicle_type", "ugv") == "drone" else None),
+            "crashed": bool(getattr(runner.ugv, "crashed", False)),
             "_note": "scoring and display only; not a navigation input",
         }
     return out

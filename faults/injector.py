@@ -186,6 +186,13 @@ class FaultInjector:
                 f.bias = np.array([float(p.get("pressure_pa", 120.0)) * mag])
                 f.flags = int(FaultFlag.BIAS)
 
+        elif ft is FaultType.WIND_GUST:
+            # Acts on the airframe, not a sensor: only a vehicle that models
+            # aerodynamics (the drone) has a `gust_fault` to write.
+            if self._dynamics is not None and hasattr(self._dynamics, "gust_fault"):
+                g = np.asarray(p.get("velocity", [8.0, 0.0, 0.0]), dtype=float)
+                self._dynamics.gust_fault = g * mag
+
         elif ft is FaultType.MAG_INTERFERENCE:
             if f is not None:
                 b = np.asarray(p.get("field_t", [2.0e-5, 0.0, 0.0]), dtype=float)
@@ -194,6 +201,10 @@ class FaultInjector:
                 f.noise_scale = 1.0 + 3.0 * mag
 
     def _clear(self, spec: FaultSpec) -> None:
+        if spec.fault_type is FaultType.WIND_GUST:
+            if self._dynamics is not None and hasattr(self._dynamics, "gust_fault"):
+                self._dynamics.gust_fault = np.zeros(3)
+            return
         f = self._fault_of(spec.target)
         if f is not None:
             f.clear()

@@ -1,0 +1,25 @@
+kind,t,detail
+fault_onset,90.0,GNSS_OUTAGE on gnss
+fault_detected,90.95,GNSS_OUTAGE by sensor_health:no message for >1.00 s (latency 0.95s)
+state_transition,91.34,NORMAL -> DEGRADED: GNSS fault confirmed
+state_transition,91.36,DEGRADED -> LIMITED_OPERATION: fallback validated; continuing within budget (75 s / 60 m)
+state_transition,165.98,"LIMITED_OPERATION -> SAFE_ACTION: dead-reckoning budget spent (75 s, 37 m)"
+state_transition,192.14,"SAFE_ACTION -> RECOVERY: inputs restored, validating before resuming"
+state_transition,198.16,RECOVERY -> NORMAL: validated clean for 6 s
+state_transition,246.94,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 280.0 m"
+plan,89.16,"obstacle at 1.24 m inside 1.75 m braking distance: ok, 139.6 m"
+plan,89.66,"obstacle at 1.40 m inside 1.42 m braking distance: ok, 126.0 m"
+plan,91.06,"cross-track error 3.50 m: FAILED (unreachable), 0.0 m"
+plan,91.56,"cross-track error 3.99 m: FAILED (unreachable), 0.0 m"
+plan,92.06,"cross-track error 4.09 m: FAILED (unreachable), 0.0 m"
+plan,92.56,"cross-track error 4.13 m: FAILED (unreachable), 0.0 m"
+plan,93.06,"cross-track error 4.30 m: FAILED (unreachable), 0.0 m"
+plan,93.56,"cross-track error 4.53 m: FAILED (unreachable), 0.0 m"
+plan,94.06,"cross-track error 4.32 m: FAILED (unreachable), 0.0 m"
+plan,94.56,"cross-track error 4.07 m: ok, 125.9 m"
+plan,96.76,"obstacle at 0.94 m inside 0.87 m braking distance: ok, 130.7 m"
+plan,97.5,"obstacle at 0.85 m inside 0.75 m braking distance: ok, 130.7 m"
+plan,98.0,"obstacle at 10.99 m inside 0.75 m braking distance: ok, 131.4 m"
+plan,159.66,"obstacle at 0.65 m inside 0.96 m braking distance: ok, 94.2 m"
+plan,160.16,"obstacle at 0.64 m inside 0.76 m braking distance: ok, 94.2 m"

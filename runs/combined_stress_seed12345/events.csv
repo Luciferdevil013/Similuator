@@ -4,32 +4,17 @@ fault_detected,45.05,OBSTACLE_APPEARS by costmap:lidar_marked (latency 0.05s)
 fault_onset,95.0,GNSS_OUTAGE on gnss
 fault_detected,95.95,GNSS_OUTAGE by sensor_health:no message for >1.00 s (latency 0.95s)
 fault_onset,185.0,GNSS_INCONSISTENCY on gnss
-state_transition,137.48,NORMAL -> DEGRADED: position sigma 1.85 m > 1.80 m
-state_transition,137.5,DEGRADED -> LIMITED_OPERATION: fallback validated; continuing within budget (75 s / 60 m)
-state_transition,137.52,"LIMITED_OPERATION -> RECOVERY: fault cleared, validating"
-state_transition,137.54,"RECOVERY -> SAFE_ACTION: recovery check failed, holding"
-state_transition,140.92,"SAFE_ACTION -> RECOVERY: inputs restored, validating before resuming"
-state_transition,146.94,RECOVERY -> NORMAL: validated clean for 6 s
-state_transition,150.88,NORMAL -> DEGRADED: GNSS fault confirmed
-state_transition,150.9,DEGRADED -> LIMITED_OPERATION: fallback validated; continuing within budget (75 s / 60 m)
-state_transition,157.52,"LIMITED_OPERATION -> RECOVERY: fault cleared, validating"
-state_transition,163.54,RECOVERY -> NORMAL: validated clean for 6 s
+state_transition,96.34,NORMAL -> DEGRADED: GNSS fault confirmed
+state_transition,96.36,DEGRADED -> LIMITED_OPERATION: fallback validated; continuing within budget (75 s / 60 m)
+state_transition,157.12,"LIMITED_OPERATION -> RECOVERY: fault cleared, validating"
+state_transition,163.14,RECOVERY -> NORMAL: validated clean for 6 s
+state_transition,204.02,NORMAL -> COMPLETE: goal reached
 plan,0.0,"initial plan: ok, 285.2 m"
-plan,89.16,"obstacle at 1.15 m inside 1.40 m braking distance: ok, 169.1 m"
-plan,90.86,"obstacle at 1.19 m inside 1.26 m braking distance: ok, 136.5 m"
-plan,107.46,"obstacle at 0.83 m inside 0.83 m braking distance: ok, 126.9 m"
-plan,107.96,"obstacle at 0.82 m inside 0.84 m braking distance: ok, 126.9 m"
-plan,108.46,"obstacle at 0.89 m inside 0.81 m braking distance: ok, 126.9 m"
-plan,108.96,"obstacle at 17.49 m inside 0.78 m braking distance: ok, 126.9 m"
-plan,129.2,"obstacle at 1.03 m inside 1.04 m braking distance: ok, 104.7 m"
-plan,129.7,"obstacle at 0.95 m inside 1.79 m braking distance: ok, 105.4 m"
-plan,130.2,"obstacle at 0.99 m inside 1.63 m braking distance: ok, 143.2 m"
-plan,130.7,"obstacle at 1.00 m inside 1.60 m braking distance: ok, 143.6 m"
-plan,134.24,"cross-track error -3.50 m: ok, 132.0 m"
-plan,137.16,"cross-track error -3.51 m: FAILED, 0.0 m"
-plan,137.66,"cross-track error -3.89 m: FAILED, 0.0 m"
-plan,138.16,"cross-track error -4.45 m: FAILED, 0.0 m"
-plan,138.66,"cross-track error -5.02 m: ok, 146.6 m"
-plan,139.68,"cross-track error 5.84 m: ok, 122.8 m"
-plan,140.8,"cross-track error 3.57 m: ok, 118.0 m"
-plan,149.46,"obstacle at 0.98 m inside 2.64 m braking distance: ok, 105.3 m"
+plan,87.26,"obstacle at 1.15 m inside 1.35 m braking distance: FAILED (unreachable), 0.0 m"
+plan,87.86,"obstacle at 1.10 m inside 1.12 m braking distance: FAILED (unreachable), 0.0 m"
+plan,88.86,"obstacle at 1.12 m inside 1.49 m braking distance: FAILED (unreachable), 0.0 m"
+plan,89.5,"obstacle at 1.34 m inside 1.35 m braking distance: ok, 127.4 m"
+plan,90.72,"obstacle at 2.86 m inside 2.86 m braking distance: ok, 129.3 m"
+plan,91.22,"cross-track error -3.71 m: ok, 124.3 m"
+plan,91.86,"obstacle at 1.66 m inside 1.96 m braking distance: ok, 122.4 m"
+plan,92.76,"obstacle at 1.69 m inside 1.83 m braking distance: FAILED (unreachable), 0.0 m"

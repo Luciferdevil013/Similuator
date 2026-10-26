@@ -1,0 +1,12 @@
+kind,t,detail
+fault_onset,90.0,IMU_BIAS on imu
+state_transition,172.98,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 280.0 m"
+plan,89.16,"obstacle at 1.24 m inside 1.75 m braking distance: ok, 139.6 m"
+plan,89.66,"obstacle at 1.40 m inside 1.42 m braking distance: ok, 126.0 m"
+plan,91.16,"cross-track error 3.51 m: ok, 124.0 m"
+plan,94.9,"cross-track error 3.78 m: ok, 121.7 m"
+plan,128.72,"obstacle at 2.23 m inside 2.24 m braking distance: ok, 70.2 m"
+plan,129.36,"obstacle at 1.68 m inside 1.76 m braking distance: ok, 69.1 m"
+plan,131.16,"obstacle at 1.63 m inside 2.59 m braking distance: ok, 67.2 m"
+plan,160.12,"cross-track error 3.51 m: ok, 13.7 m"

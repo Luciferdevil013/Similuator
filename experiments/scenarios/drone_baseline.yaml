@@ -1,0 +1,13 @@
+base: _common.yaml
+id: drone_baseline
+description: >
+  Quadrotor delivery flight, no faults. Takes off, cruises at 20 m above the
+  terrain ahead, descends and lands at the goal. The reference for every
+  drone fault scenario.
+duration: 240.0
+mission: {timeout_s: 240.0}
+vehicle: {type: drone, cruise_agl: 20.0, cruise_speed: 8.0}
+sensors:
+  imu: {rate_hz: 250.0}
+world: {wind_speed: 3.0, wind_dir_deg: 270.0, turbulence: 0.6}
+faults: []

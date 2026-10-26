@@ -1,0 +1,11 @@
+kind,t,detail
+fault_onset,85.0,STALE_MESSAGES on gnss
+fault_detected,85.75,STALE_MESSAGES by sensor_health:payload not advancing (latency 0.75s)
+state_transition,86.14,NORMAL -> DEGRADED: GNSS fault confirmed
+state_transition,86.16,DEGRADED -> LIMITED_OPERATION: fallback validated; continuing within budget (75 s / 60 m)
+state_transition,160.78,"LIMITED_OPERATION -> SAFE_ACTION: dead-reckoning budget spent (75 s, 41 m)"
+state_transition,187.68,"SAFE_ACTION -> RECOVERY: inputs restored, validating before resuming"
+state_transition,193.7,RECOVERY -> NORMAL: validated clean for 6 s
+state_transition,230.18,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 278.9 m"
+plan,181.52,"cross-track error 6.43 m: ok, 79.3 m"

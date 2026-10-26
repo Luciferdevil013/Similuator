@@ -1,0 +1,25 @@
+kind,t,detail
+fault_onset,100.0,GNSS_INCONSISTENCY on gnss
+state_transition,210.88,NORMAL -> DEGRADED: GNSS fault confirmed
+state_transition,210.9,DEGRADED -> LIMITED_OPERATION: fallback validated; continuing within budget (75 s / 60 m)
+state_transition,214.72,LIMITED_OPERATION -> SAFE_ACTION: position sigma 7.92 m > unsafe limit 7.00 m
+state_transition,220.7,"SAFE_ACTION -> RECOVERY: inputs restored, validating before resuming"
+state_transition,226.72,RECOVERY -> NORMAL: validated clean for 6 s
+state_transition,261.92,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 289.5 m"
+plan,83.86,"obstacle at 0.77 m inside 0.86 m braking distance: ok, 177.8 m"
+plan,94.06,"obstacle at 1.21 m inside 1.23 m braking distance: ok, 192.0 m"
+plan,110.72,"cross-track error 3.53 m: FAILED (unreachable), 0.0 m"
+plan,111.94,"cross-track error 3.74 m: FAILED (unreachable), 0.0 m"
+plan,112.44,"cross-track error 4.11 m: ok, 162.0 m"
+plan,183.66,"obstacle at 1.00 m inside 0.94 m braking distance: FAILED (unreachable), 0.0 m"
+plan,184.16,"obstacle at 1.03 m inside 0.75 m braking distance: FAILED (unreachable), 0.0 m"
+plan,184.66,"obstacle at inf m inside 0.83 m braking distance: FAILED (unreachable), 0.0 m"
+plan,185.16,"obstacle at inf m inside 0.76 m braking distance: FAILED (unreachable), 0.0 m"
+plan,185.66,"obstacle at inf m inside 0.76 m braking distance: FAILED (unreachable), 0.0 m"
+plan,186.16,"obstacle at inf m inside 0.76 m braking distance: ok, 90.0 m"
+plan,186.66,"obstacle at inf m inside 0.77 m braking distance: ok, 90.7 m"
+plan,203.1,"obstacle at 1.73 m inside 1.75 m braking distance: ok, 71.3 m"
+plan,205.86,"obstacle at 1.16 m inside 1.92 m braking distance: ok, 70.7 m"
+plan,206.36,"obstacle at 0.95 m inside 0.79 m braking distance: ok, 70.4 m"
+plan,214.92,"cross-track error -10.32 m: ok, 61.3 m"

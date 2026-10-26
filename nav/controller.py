@@ -175,10 +175,18 @@ class PurePursuitController:
         nearest_any = float(np.min(r)) if r.size else float("inf")
         out["nearest_any"] = nearest_any
         out["too_close"] = nearest_any < c.min_standoff
+        # Only a too-close return in the FORWARD half-plane forces a stop:
+        # driving forward closes on it. One abeam or behind still limits the
+        # speed to a creep (see "standoff" below), but stopping for it froze
+        # the vehicle for good -- it could never move away from the thing it
+        # was too close to, and every replan from inside the inflated zone
+        # failed, so the run ended in a timeout.
+        close = r < c.min_standoff
+        out["too_close_ahead"] = bool(np.any(close & (np.abs(a) < np.pi / 2)))
 
         # Braking distance from the current speed, plus a fixed margin.
         stop_dist = speed ** 2 / (2.0 * max(c.max_decel, 1e-3)) + c.safety_margin
-        out["blocked"] = bool(out["min_dist"] < stop_dist or out["too_close"])
+        out["blocked"] = bool(out["min_dist"] < stop_dist or out["too_close_ahead"])
         out["stop_distance"] = float(stop_dist)
 
         # Virtual bumper: returns inside `bumper_range` push the heading away,

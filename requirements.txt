@@ -1,0 +1,8 @@
+# Simulation core
+numpy>=1.24
+
+# Scenario files
+PyYAML>=6.0
+
+# Telemetry bridge (bridge/telemetry_server.py)
+aiohttp>=3.9

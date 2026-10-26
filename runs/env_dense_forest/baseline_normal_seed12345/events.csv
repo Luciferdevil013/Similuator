@@ -1,0 +1,3 @@
+kind,t,detail
+state_transition,146.96,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 278.9 m"

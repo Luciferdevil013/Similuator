@@ -1,0 +1,13 @@
+base: drone_baseline.yaml
+id: drone_gnss_outage
+description: >
+  GNSS is lost mid-cruise and does not come back. With no odometry the drone
+  can only dead-reckon on the IMU for a few seconds; the expected response is
+  LIMITED_OPERATION, then a failsafe landing in place once the budget is
+  spent -- never continuing on a drifting estimate.
+faults:
+  - type: GNSS_OUTAGE
+    target: gnss
+    onset: 25.0
+    duration: -1
+    label: total loss of fix

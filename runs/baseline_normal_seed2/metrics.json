@@ -2,18 +2,18 @@
  "scenario_id": "baseline_normal",
  "seed": 2,
  "accuracy": {
-  "position_rmse_m": 1.7255976774702282,
-  "position_rmse_horizontal_m": 1.7255976774702282,
-  "position_rmse_vertical_m": 0.5646440019966101,
-  "position_error_mean_m": 1.5164652796345108,
-  "position_error_p95_m": 2.8696609667686444,
-  "position_error_max_m": 5.831964542590694,
-  "samples": 5796
+  "position_rmse_m": 1.4844401015511444,
+  "position_rmse_horizontal_m": 1.4844401015511444,
+  "position_rmse_vertical_m": 0.5243700424847215,
+  "position_error_mean_m": 1.3289739485856582,
+  "position_error_p95_m": 2.593384556260027,
+  "position_error_max_m": 3.633061875601812,
+  "samples": 8311
  },
  "consistency": {
-  "normalised_error_mean": 1.4675131281226275,
-  "normalised_error_p95": 2.8208433087909386,
-  "fraction_within_3sigma": 0.9680814354727398,
+  "normalised_error_mean": 1.3418066282284113,
+  "normalised_error_p95": 2.6196571691769566,
+  "fraction_within_3sigma": 0.9936229093971845,
   "overconfident": false
  },
  "detection": {
@@ -25,12 +25,12 @@
   "per_fault": []
  },
  "false_alarms": {
-  "clean_epochs": 1450,
-  "clean_span_s": 289.78000000000003,
-  "flagged_epoch_fraction": 0.0034482758620689655,
-  "confirmed_epoch_fraction": 0.0,
-  "false_alarm_events": 0,
-  "false_alarms_per_hour": 0.0
+  "clean_epochs": 2079,
+  "clean_span_s": 415.5775,
+  "flagged_epoch_fraction": 0.003367003367003367,
+  "confirmed_epoch_fraction": 0.005772005772005772,
+  "false_alarm_events": 1,
+  "false_alarms_per_hour": 8.662644151812838
  },
  "recovery": {
   "per_fault": [],
@@ -39,74 +39,74 @@
   "unresolved_faults": 0
  },
  "path": {
-  "distance_travelled_m": 355.73126833551845,
+  "distance_travelled_m": 487.5229053333221,
   "straight_line_m": 244.65894629054543,
-  "efficiency_vs_straight_line": 0.6877633991392292,
+  "efficiency_vs_straight_line": 0.5018409260653522,
   "planned_path_m": 296.358170748588,
-  "efficiency_vs_plan": 0.8330956458656568
+  "efficiency_vs_plan": 0.6078856347189806
  },
  "availability": {
   "per_sensor": {
    "imu": {
-    "expected": 57985,
-    "published": 57985,
+    "expected": 83141,
+    "published": 83141,
     "dropped": 0,
     "availability": 1.0
    },
    "gnss": {
-    "expected": 1450,
-    "published": 1450,
+    "expected": 2079,
+    "published": 2079,
     "dropped": 0,
     "availability": 1.0
    },
    "wheel_odom": {
-    "expected": 14497,
-    "published": 14496,
+    "expected": 20786,
+    "published": 20786,
     "dropped": 0,
-    "availability": 0.9999310202110782
+    "availability": 1.0
    },
    "magnetometer": {
-    "expected": 14497,
-    "published": 14496,
+    "expected": 20786,
+    "published": 20786,
     "dropped": 0,
-    "availability": 0.9999310202110782
+    "availability": 1.0
    },
    "barometer": {
-    "expected": 14497,
-    "published": 14496,
+    "expected": 20786,
+    "published": 20786,
     "dropped": 0,
-    "availability": 0.9999310202110782
+    "availability": 1.0
    },
    "battery": {
-    "expected": 1450,
-    "published": 1450,
+    "expected": 2079,
+    "published": 2079,
     "dropped": 0,
     "availability": 1.0
    },
    "lidar": {
-    "expected": 2900,
-    "published": 2900,
+    "expected": 4158,
+    "published": 4157,
     "dropped": 0,
-    "availability": 1.0
+    "availability": 0.9997594997594997
    }
   },
-  "mean_availability": 0.9999704372333192
+  "mean_availability": 0.9999656428227857
  },
  "outcome": {
   "goal_reached": true,
-  "final_state": "NORMAL",
+  "final_state": "COMPLETE",
   "collisions": 0,
-  "min_obstacle_clearance_m": 1.1229082071309995,
-  "duration_s": 289.9225,
+  "min_obstacle_clearance_m": 1.5524304455187639,
+  "duration_s": 415.7025,
   "timed_out": false,
   "safe": true,
   "mission_success": true,
   "safe_stop_short_of_goal": false,
   "finish_reason": "goal reached (estimated)",
-  "replans": 69,
-  "failed_plans": 44,
+  "replans": 28,
+  "failed_plans": 83,
   "alignment_time_s": 0.1225,
-  "ekf_gate_lockout_resets": 76,
-  "realtime_factor": 3.650473221246602
+  "ekf_gate_lockout_resets": 0,
+  "realtime_factor": 2.7534236533704934
  }
 }

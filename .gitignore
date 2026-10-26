@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Node / dashboard (node_modules is platform-specific: run `npm install`)
+dashboard/node_modules/
+dashboard/tsconfig.tsbuildinfo
+# dashboard/dist IS committed on purpose, so the demo runs with Python only.
+
+# Large per-trial outputs (regenerate with `python3 -m experiment.batch`).
+# metrics.json, events.csv and the summary tables stay in git.
+runs/*/result.json
+runs/*/timeseries.csv
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

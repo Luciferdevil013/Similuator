@@ -292,6 +292,7 @@ class FaultType(IntEnum):
     WHEEL_SLIP = 8
     BARO_DRIFT = 9
     MAG_INTERFERENCE = 10
+    WIND_GUST = 11
 
 
 @dataclass

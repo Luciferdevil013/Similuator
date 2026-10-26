@@ -111,7 +111,24 @@ export interface BatteryBlock {
  * dashboard feeds it back to the simulator, and the simulator's navigation
  * stack never reads it -- see the note the bridge attaches to this block.
  */
+export interface DroneBlock {
+  phase: string;
+  armed: boolean;
+  landed_estimate: boolean;
+  agl_estimate_m: number | null;
+  alt_setpoint_m: number | null;
+  est_altitude_m: number;
+  vertical_speed_mps: number;
+  thrust_ratio: number;
+  tilt_cmd_deg: number;
+  baro_excluded: boolean;
+  rangefinder_m: number | null;
+}
+
 export interface GroundTruth {
+  agl_m?: number;
+  wind?: number[] | null;
+  crashed?: boolean;
   position: number[];
   velocity: number[];
   yaw_deg: number;
@@ -120,6 +137,34 @@ export interface GroundTruth {
   speed: number;
   position_error_m: number;
   _note: string;
+}
+
+export interface StateTransition {
+  t: number;
+  from: string;
+  to: string;
+  reason: string;
+  dr_time: number;
+  dr_distance: number;
+}
+
+export interface FaultRecord {
+  scenario_id: string;
+  fault_type: string;
+  target: string;
+  onset: number;
+  end: number | null;
+  detected: boolean;
+  detection_time: number | null;
+  detection_latency: number | null;
+  detected_by: string;
+  params: Record<string, unknown>;
+}
+
+export interface FaultWindow {
+  onset: number;
+  end: number;
+  type: string;
 }
 
 export interface Telemetry {
@@ -133,12 +178,20 @@ export interface Telemetry {
   faults_active: ActiveFault[];
   path_version: number;
   path?: number[][];
+  transitions: StateTransition[];
+  fault_history: FaultRecord[];
   control?: ControlBlock;
   lidar?: LidarOutline;
   battery?: BatteryBlock;
   ground_truth?: GroundTruth;
+  drone?: DroneBlock;
   paused?: boolean;
+  /** false before the first Start when the bridge was launched paused. */
+  started?: boolean;
   finished?: boolean;
+  session?: string;
+  speed?: number;
+  scenario_file?: string;
 }
 
 export interface ObstacleSpec {
@@ -166,6 +219,7 @@ export interface WorldMessage {
     z_range: [number, number];
   };
   obstacles: ObstacleSpec[];
+  fault_windows: FaultWindow[];
   mission: {
     start: number[];
     goal: number[];
@@ -173,7 +227,14 @@ export interface WorldMessage {
     goal_tolerance: number;
     timeout_s: number;
   };
-  scenario: { id: string; description: string; seed: number; duration_s: number };
+  scenario: {
+    id: string;
+    description: string;
+    seed: number;
+    duration_s: number;
+    environment?: string;
+  };
+  vehicle?: { type: "ugv" | "drone"; cruise_agl: number | null };
   faults_declared: {
     type: string;
     target: string;
@@ -188,11 +249,23 @@ export interface ResultsMessage {
   metrics: Record<string, Record<string, unknown>>;
 }
 
-export type BridgeMessage = Telemetry | WorldMessage | ResultsMessage;
+/** Same scene payload as "world", sent when the scene changes mid-run. */
+export type WorldUpdateMessage = Omit<WorldMessage, "type"> & { type: "world_update" };
+
+export type BridgeMessage =
+  | Telemetry
+  | WorldMessage
+  | WorldUpdateMessage
+  | ResultsMessage
+  | { type: "no_session" };
 
 export type ScreenId =
+  | "home"
   | "overview"
+  | "map"
   | "simulation"
   | "sensors"
   | "results"
-  | "replay";
+  | "replay"
+  | "lab"
+  | "fleet";

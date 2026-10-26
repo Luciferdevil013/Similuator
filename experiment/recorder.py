@@ -96,6 +96,7 @@ class ExperimentRecorder:
             "length_m": round(length, 3),
             "waypoints": int(0 if path is None else len(path)),
             "expansions": int(stats.get("expansions", 0)) if stats else 0,
+            "fail_reason": (stats.get("reason", "") if stats else "no stats"),
         })
 
     # -- per-step sampling -------------------------------------------------
@@ -178,7 +179,8 @@ class ExperimentRecorder:
             for p in self.plans:
                 w.writerow(["plan", p.get("t"),
                             "%s: %s, %.1f m" % (p.get("reason"),
-                                                "ok" if p.get("ok") else "FAILED",
+                                                "ok" if p.get("ok") else
+                                                "FAILED (%s)" % (p.get("fail_reason") or "?"),
                                                 p.get("length_m", 0.0))])
         return paths
 

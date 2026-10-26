@@ -75,7 +75,10 @@ export function ExperimentResults({ results, latest, world }: Props) {
           <Stat label="min clearance" value={val(outcome.min_obstacle_clearance_m)} unit="m" />
           <Stat label="final state" value={val(outcome.final_state)} />
           <Stat label="duration" value={val(outcome.duration_s)} unit="s" />
-          <Stat label="real-time factor" value={val(outcome.realtime_factor)} unit="×" />
+          <Stat label="seed" value={val(results.seed)} />
+          {typeof outcome.realtime_factor === "number" && (
+            <Stat label="real-time factor" value={val(outcome.realtime_factor)} unit="×" />
+          )}
         </div>
         {outcome.safe_stop_short_of_goal === true && (
           <p className="reason">
@@ -88,7 +91,10 @@ export function ExperimentResults({ results, latest, world }: Props) {
       </Card>
 
       {Object.entries(results)
-        .filter(([k]) => k !== "outcome")
+        // Scalar entries (scenario_id, seed) are shown in the verdict, not as
+        // cards -- iterating a string renders one row per character.
+        .filter(([k, body]) => k !== "outcome" && body !== null
+                && typeof body === "object" && !Array.isArray(body))
         .map(([section, body]) => (
           <Card key={section} title={SECTION_TITLES[section] ?? section}>
             <table className="table compact">

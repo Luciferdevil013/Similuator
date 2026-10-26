@@ -2,11 +2,13 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { Card, Stat, num } from "../components/Panels";
 import type { Telemetry, WorldMessage } from "../types";
+import type { HistoryRow } from "../useTelemetry";
 
 interface Props {
   latest: Telemetry;
   world: WorldMessage;
   path: number[][];
+  history?: HistoryRow[];
 }
 
 /**
@@ -17,7 +19,10 @@ interface Props {
  * estimated pose and the true pose are drawn as two distinct bodies so the
  * localisation error is visible as a physical offset rather than a number.
  */
-export function Simulation3D({ latest, world, path }: Props) {
+export function Simulation3D({ latest, world, path, history = [] }: Props) {
+  // Read once when the scene is built, to pre-fill the trail.
+  const historyRef = useRef(history);
+  historyRef.current = history;
   const mountRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<{
     renderer: THREE.WebGLRenderer;
@@ -31,6 +36,10 @@ export function Simulation3D({ latest, world, path }: Props) {
     scanPoints: THREE.Points;
     trail: number[];
     sampleMesh: (x: number, y: number) => number;
+    isDrone: boolean;
+    rotors: THREE.Mesh[];
+    shadow: THREE.Mesh;
+    stem: THREE.Line;
     dispose: () => void;
   } | null>(null);
   const followRef = useRef(true);
@@ -40,9 +49,10 @@ export function Simulation3D({ latest, world, path }: Props) {
     const mount = mountRef.current;
     if (!mount) return;
 
+    const isDrone = world.vehicle?.type === "drone";
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0d1117);
-    scene.fog = new THREE.Fog(0x0d1117, 120, 400);
+    scene.background = new THREE.Color(0x070a0e);
+    scene.fog = new THREE.Fog(0x070a0e, 140, 460);
 
     const camera = new THREE.PerspectiveCamera(
       55,
@@ -80,7 +90,7 @@ export function Simulation3D({ latest, world, path }: Props) {
     const terrain = new THREE.Mesh(
       geo,
       new THREE.MeshStandardMaterial({
-        color: 0x6b7f5a,
+        color: 0x4f6b45,
         roughness: 0.95,
         metalness: 0.0,
         flatShading: false,
@@ -93,10 +103,10 @@ export function Simulation3D({ latest, world, path }: Props) {
     const wire = new THREE.Mesh(
       geo,
       new THREE.MeshBasicMaterial({
-        color: 0x8fa87a,
+        color: 0xc8ff4d,
         wireframe: true,
         transparent: true,
-        opacity: 0.12,
+        opacity: 0.07,
       })
     );
     wire.rotation.copy(terrain.rotation);
@@ -155,8 +165,8 @@ export function Simulation3D({ latest, world, path }: Props) {
       m.rotation.x = Math.PI;
       scene.add(m);
     };
-    mkMarker(world.mission.start[0], world.mission.start[1], 0x3fb950);
-    mkMarker(world.mission.goal[0], world.mission.goal[1], 0x4a9eff);
+    mkMarker(world.mission.start[0], world.mission.start[1], 0x4dffa6);
+    mkMarker(world.mission.goal[0], world.mission.goal[1], 0x4de2ff);
 
     // --- vehicle bodies: estimate (solid) and truth (wireframe)
     const makeBody = (color: number, wireframeOnly: boolean) => {
@@ -191,17 +201,68 @@ export function Simulation3D({ latest, world, path }: Props) {
       grp.add(beacon);
       return grp;
     };
-    const estBody = makeBody(0x4a9eff, false);
-    const trueBody = makeBody(0xf0803c, true);
+    // Quadrotor: body, four arms, four rotor discs (spun in the render loop).
+    // Drawn 4x scale -- a 0.5 m frame is a few pixels from 50 m away.
+    const rotors: THREE.Mesh[] = [];
+    const makeQuad = (color: number, wireframeOnly: boolean) => {
+      const grp = new THREE.Group();
+      const S = 4.0;
+      const mat = new THREE.MeshStandardMaterial({
+        color, wireframe: wireframeOnly, transparent: wireframeOnly,
+        opacity: wireframeOnly ? 0.8 : 1, emissive: color,
+        emissiveIntensity: wireframeOnly ? 0.6 : 0.25, roughness: 0.4, metalness: 0.3,
+      });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.34 * S, 0.12 * S, 0.34 * S), mat);
+      grp.add(body);
+      for (let k = 0; k < 4; k++) {
+        const ang = Math.PI / 4 + (k * Math.PI) / 2;
+        const ax = Math.cos(ang) * 0.42 * S;
+        const az = Math.sin(ang) * 0.42 * S;
+        const arm = new THREE.Mesh(
+          new THREE.BoxGeometry(0.62 * S, 0.04 * S, 0.05 * S),
+          k === 0 || k === 3
+            ? new THREE.MeshStandardMaterial({ color: 0xff5c7a, emissive: 0xff5c7a,
+                                               emissiveIntensity: 0.4, wireframe: wireframeOnly })
+            : mat);
+        arm.position.set(ax / 2, 0, az / 2);
+        arm.rotation.y = -ang;
+        grp.add(arm);
+        const rotor = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.24 * S, 0.24 * S, 0.01 * S, 24),
+          new THREE.MeshBasicMaterial({ color: wireframeOnly ? color : 0xdfe7ef,
+                                        transparent: true, opacity: wireframeOnly ? 0.35 : 0.28,
+                                        wireframe: wireframeOnly }));
+        rotor.position.set(ax, 0.07 * S, az);
+        grp.add(rotor);
+        if (!wireframeOnly) rotors.push(rotor);
+      }
+      return grp;
+    };
+    const estBody = isDrone ? makeQuad(0x4de2ff, false) : makeBody(0x4de2ff, false);
+    const trueBody = isDrone ? makeQuad(0xff8a3d, true) : makeBody(0xff8a3d, true);
     scene.add(estBody, trueBody);
+
+    // Ground shadow + altitude stem make height readable at a glance.
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(1.2, 32),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45 }));
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.visible = isDrone;
+    scene.add(shadow);
+    const stemGeo = new THREE.BufferGeometry();
+    stemGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+    const stem = new THREE.Line(stemGeo, new THREE.LineDashedMaterial({
+      color: 0x4de2ff, dashSize: 0.8, gapSize: 0.6, transparent: true, opacity: 0.7 }));
+    stem.visible = isDrone;
+    scene.add(stem);
 
     // --- 1-sigma uncertainty ring around the estimate
     const sigmaRing = new THREE.Mesh(
       new THREE.RingGeometry(0.98, 1.0, 48),
       new THREE.MeshBasicMaterial({
-        color: 0x4a9eff,
+        color: 0x4de2ff,
         transparent: true,
-        opacity: 0.5,
+        opacity: 0.55,
         side: THREE.DoubleSide,
       })
     );
@@ -220,8 +281,8 @@ export function Simulation3D({ latest, world, path }: Props) {
         new THREE.LineBasicMaterial({ color, linewidth: width })
       );
     };
-    const planLine = mkLine(0x4a9eff, 2, 4096);
-    const trailLine = mkLine(0xf0803c, 2, 12000);
+    const planLine = mkLine(0xc8ff4d, 2, 4096);
+    const trailLine = mkLine(0xff8a3d, 2, 12000);
     scene.add(planLine, trailLine);
 
     const scanGeo = new THREE.BufferGeometry();
@@ -238,7 +299,7 @@ export function Simulation3D({ latest, world, path }: Props) {
 
     // --- orbit-style mouse control, written inline to avoid pulling in
     //     OrbitControls and its event-handling surface.
-    const cam = { az: -0.7, el: 0.52, dist: 42 };
+    const cam = { az: -0.7, el: isDrone ? 0.42 : 0.52, dist: isDrone ? 55 : 36 };
     let drag = false;
     let lx = 0;
     let ly = 0;
@@ -278,8 +339,16 @@ export function Simulation3D({ latest, world, path }: Props) {
 
     let raf = 0;
     const target = new THREE.Vector3();
+    let snapped = false;
     const animate = () => {
       raf = requestAnimationFrame(animate);
+      for (const r of rotors) r.rotation.y += 0.9;
+      // Start on the vehicle rather than easing over from the map centre,
+      // which on a slow GPU took long enough to look like an empty scene.
+      if (!snapped && followRef.current && estBody.position.lengthSq() > 0) {
+        target.copy(estBody.position);
+        snapped = true;
+      }
       const focus = followRef.current ? estBody.position : terrain.position;
       target.lerp(focus, followRef.current ? 0.12 : 0.05);
       camera.position.set(
@@ -292,9 +361,28 @@ export function Simulation3D({ latest, world, path }: Props) {
     };
     animate();
 
+    // Pre-fill the truth trail from the buffered history so opening this tab
+    // mid-run shows where the vehicle has been.
+    const trail: number[] = [];
+    for (const r of historyRef.current) {
+      if (r.trueX === null || r.trueY === null) continue;
+      const g = sampleMesh(r.trueX, r.trueY);
+      const y = isDrone ? g + (r.trueAgl ?? 0) + 0.18 : g + 0.25;
+      const n = trail.length;
+      if (n === 0 || Math.hypot(r.trueX - trail[n - 3], r.trueY + trail[n - 1]) > 0.45)
+        trail.push(r.trueX, y, -r.trueY);
+    }
+    if (trail.length) {
+      const attr = trailLine.geometry.attributes.position as THREE.BufferAttribute;
+      (attr.array as Float32Array).set(trail.slice(-12000 * 3));
+      attr.needsUpdate = true;
+      trailLine.geometry.setDrawRange(0, Math.min(trail.length / 3, 12000));
+      trailLine.geometry.computeBoundingSphere();
+    }
+
     sceneRef.current = {
       renderer, scene, camera, estBody, trueBody, sigmaRing,
-      planLine, trailLine, scanPoints, trail: [], sampleMesh,
+      planLine, trailLine, scanPoints, trail, sampleMesh, isDrone, rotors, shadow, stem,
       dispose: () => {
         cancelAnimationFrame(raf);
         ro.disconnect();
@@ -330,8 +418,25 @@ export function Simulation3D({ latest, world, path }: Props) {
     const d2r = Math.PI / 180;
 
     const groundEst = s.sampleMesh(e.position[0], e.position[1]);
-    s.estBody.position.set(e.position[0], groundEst + 0.1, -e.position[1]);
-    s.estBody.rotation.set(0, -e.yaw_deg * d2r, 0);
+    // ENU -> three: x = East, y = Up, z = -North. A rotation about ENU z by
+    // yaw is a rotation about three's +Y by the SAME angle (the old -yaw
+    // drew every heading mirrored). For the drone, pitch is about three's
+    // -Z and roll about +X, applied yaw-pitch-roll ('YZX').
+    if (s.isDrone) {
+      s.estBody.position.set(e.position[0], Math.max(e.position[2], groundEst + 0.3), -e.position[1]);
+      s.estBody.rotation.set(e.roll_deg * d2r, e.yaw_deg * d2r, -e.pitch_deg * d2r, "YZX");
+      s.shadow.position.set(e.position[0], groundEst + 0.08, -e.position[1]);
+      const sa = s.stem.geometry.attributes.position as THREE.BufferAttribute;
+      sa.setXYZ(0, e.position[0], groundEst + 0.1, -e.position[1]);
+      sa.setXYZ(1, e.position[0], s.estBody.position.y, -e.position[1]);
+      sa.needsUpdate = true;
+      s.stem.computeLineDistances();
+      const spin = latest.drone?.armed ? 1 : 0;
+      for (const r of s.rotors) r.visible = spin === 1;
+    } else {
+      s.estBody.position.set(e.position[0], groundEst + 0.1, -e.position[1]);
+      s.estBody.rotation.set(0, e.yaw_deg * d2r, 0);
+    }
 
     const sig = Math.max(e.pos_sigma_h, 0.05);
     s.sigmaRing.position.copy(s.estBody.position);
@@ -342,15 +447,18 @@ export function Simulation3D({ latest, world, path }: Props) {
     if (gt) {
       s.trueBody.visible = true;
       const groundTrue = s.sampleMesh(gt.position[0], gt.position[1]);
-      s.trueBody.position.set(gt.position[0], groundTrue + 0.1, -gt.position[1]);
-      s.trueBody.rotation.set(0, -gt.yaw_deg * d2r, 0);
+      const ty = s.isDrone ? Math.max(gt.position[2], groundTrue + 0.3) : groundTrue + 0.1;
+      s.trueBody.position.set(gt.position[0], ty, -gt.position[1]);
+      if (s.isDrone)
+        s.trueBody.rotation.set(gt.roll_deg * d2r, gt.yaw_deg * d2r, -gt.pitch_deg * d2r, "YZX");
+      else s.trueBody.rotation.set(0, gt.yaw_deg * d2r, 0);
       const trail = s.trail;
       const last = trail.length;
       if (
         last === 0 ||
         Math.hypot(gt.position[0] - trail[last - 3], gt.position[1] + trail[last - 1]) > 0.45
       ) {
-        trail.push(gt.position[0], groundTrue + 0.25, -gt.position[1]);
+        trail.push(gt.position[0], s.isDrone ? ty : groundTrue + 0.25, -gt.position[1]);
         if (trail.length > 12000 * 3) trail.splice(0, 3);
         const attr = s.trailLine.geometry.attributes.position as THREE.BufferAttribute;
         (attr.array as Float32Array).set(trail);
@@ -392,9 +500,10 @@ export function Simulation3D({ latest, world, path }: Props) {
     const n = Math.min(path.length, arr.length / 3);
     for (let i = 0; i < n; i++) {
       const [x, y] = path[i];
-      // Lift the plan slightly above the surface so it is not z-fighting.
+      // Lift the plan slightly above the surface so it is not z-fighting;
+      // a drone's route is drawn at its cruise height above the terrain.
       arr[i * 3] = x;
-      arr[i * 3 + 1] = s.sampleMesh(x, y) + 0.35;
+      arr[i * 3 + 1] = s.sampleMesh(x, y) + (s.isDrone ? (world.vehicle?.cruise_agl ?? 20) : 0.35);
       arr[i * 3 + 2] = -y;
     }
     attr.needsUpdate = true;
@@ -419,13 +528,21 @@ export function Simulation3D({ latest, world, path }: Props) {
           </label>
         }
       >
-        <div ref={mountRef} className="three-mount" />
+        <div ref={mountRef} className="three-mount">
+          <div className="hud">
+            <span className="chip">{latest.resilience.state.replace(/_/g, " ")}</span>
+            {latest.drone && <span className="chip">{latest.drone.phase.replace(/_/g, " ").toLowerCase()} · {num(latest.drone.agl_estimate_m, 1)} m AGL</span>}
+            <span className="chip">σ {num(latest.estimate.pos_sigma_h, 2)} m{gt ? ` · err ${num(gt.position_error_m, 2)} m` : ""}</span>
+          </div>
+        </div>
         <div className="legend3d">
-          <span><i style={{ background: "#4a9eff" }} />estimated pose + 1σ ring</span>
-          <span><i style={{ background: "#f0803c" }} />ground truth (display only)</span>
-          <span><i style={{ background: "#ffd866" }} />LiDAR returns</span>
+          <span><i style={{ background: "#4de2ff" }} />estimated pose + 1σ ring</span>
+          <span><i style={{ background: "#ff8a3d" }} />ground truth (display only)</span>
+          <span><i style={{ background: "#c8ff4d" }} />planned route</span>
+          {!latest.drone && <span><i style={{ background: "#ffd866" }} />LiDAR returns</span>}
           <span><i style={{ background: "#8c6239" }} />known obstacle</span>
           <span><i style={{ background: "#c2502f" }} />discovered obstacle</span>
+          {latest.drone && <span><i style={{ background: "#ff5c7a" }} />drone nose arms</span>}
         </div>
       </Card>
 

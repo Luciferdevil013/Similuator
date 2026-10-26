@@ -1,0 +1,4 @@
+kind,t,detail
+fault_onset,100.0,GNSS_INCONSISTENCY on gnss
+state_transition,136.84,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 255.6 m"

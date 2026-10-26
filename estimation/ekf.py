@@ -99,6 +99,12 @@ class EkfConfig:
     reject_lockout_count: int = 8
     reject_lockout_inflation: float = 4.0
     lockout_tags: tuple[str, ...] = ("gnss_pos", "gnss_vel")
+    # Wheel odometry is the only velocity reference left in a GNSS outage. If
+    # the velocity estimate has drifted outside the gate, a run of rejected
+    # odometry is the filter being wrong, not the wheels: widen the VELOCITY
+    # covariance only (never position) so the encoders can pull it back.
+    # 15 samples at 50 Hz is 0.3 s, longer than a transient slip.
+    odom_lockout_count: int = 15
     # How much the specific force may change over one transport delay. This
     # sets how far a delayed measurement may be trusted after extrapolation.
     accel_jerk_sigma: float = 2.0            # m/s^2
@@ -109,6 +115,10 @@ class EkfConfig:
     baro_sigma: float = 0.35                 # m
     odom_speed_sigma: float = 0.06           # m/s
     odom_lateral_sigma: float = 0.10         # m/s, non-holonomic constraint
+    # A ground vehicle does not move along its own body z axis either; the
+    # allowance covers suspension travel and terrain roughness. Without this
+    # row vertical body velocity is unobserved once GNSS is gone.
+    odom_vertical_sigma: float = 0.15        # m/s
     mag_yaw_sigma: float = 0.26              # rad (~15 deg)
     zupt_vel_sigma: float = 0.02             # m/s
     zupt_gyro_sigma: float = 0.004           # rad/s
@@ -175,6 +185,11 @@ class ErrorStateEkf:
         self.t = 0.0
         self.omega_body = np.zeros(3)
         self._consec_reject: dict[str, int] = {}
+        # Cleared by the runner while the GNSS integrity monitor has
+        # confirmed an inconsistency: the lockout reset exists to re-acquire
+        # after the FILTER diverged, and re-opening the gate on a stream the
+        # monitor distrusts is exactly how a spoofed position gets accepted.
+        self.lockout_enabled = True
         self.last_accel_enu = np.zeros(3)
         self.last_gyro_raw = np.zeros(3)
         self.initialised = False
@@ -185,7 +200,7 @@ class ErrorStateEkf:
         self.last = {
             "gnss_pos_nis": 0.0, "gnss_pos_innov": np.zeros(3),
             "gnss_pos_rejected": False, "gnss_vel_nis": 0.0,
-            "baro_innov": 0.0, "odom_innov": np.zeros(2), "mag_innov": 0.0,
+            "baro_innov": 0.0, "odom_innov": np.zeros(3), "mag_innov": 0.0,
             "updates": 0, "rejections": 0,
         }
 
@@ -331,12 +346,18 @@ class ErrorStateEkf:
             # slipping or sliding, which is information, not divergence --
             # inflating the covariance for it would just loosen the filter
             # every time the ground got loose.
-            if (tag in self.cfg.lockout_tags
+            if (tag in self.cfg.lockout_tags and self.lockout_enabled
                     and n >= self.cfg.reject_lockout_count):
                 self.P[:6, :6] *= self.cfg.reject_lockout_inflation
                 self._symmetrise()
                 self._consec_reject[tag] = 0
                 self.last["lockout_resets"] = self.last.get("lockout_resets", 0) + 1
+            elif tag == "odom" and n >= self.cfg.odom_lockout_count:
+                self.P[IV, IV] *= self.cfg.reject_lockout_inflation
+                self._symmetrise()
+                self._consec_reject[tag] = 0
+                self.last["odom_lockout_resets"] = (
+                    self.last.get("odom_lockout_resets", 0) + 1)
             return False, nis
         self._consec_reject[tag] = 0
 
@@ -452,6 +473,15 @@ class ErrorStateEkf:
         self.last["baro_innov"] = float(innov[0])
         return ok, nis
 
+    def update_altitude(self, alt_meas: float, sigma: float, tag: str = "alt"):
+        """Absolute altitude (no bias state), e.g. terrain map + rangefinder."""
+        innov = np.array([float(alt_meas) - self.p[2]])
+        H = np.zeros((1, NX))
+        H[0, 2] = 1.0
+        ok, nis = self._update(innov, H, np.array([[sigma ** 2]]), self.cfg.scalar_gate, tag)
+        self.last["%s_innov" % tag] = float(innov[0])
+        return ok, nis
+
     def update_wheel_odometry(self, speed_body_x: float, *,
                               speed_sigma: float | None = None,
                               lateral_sigma: float | None = None):
@@ -490,19 +520,22 @@ class ErrorStateEkf:
         # The encoders report (1 + scale) times the true forward speed.
         gain = 1.0 + self.odom_scale
         innov = np.array([float(speed_body_x) - gain * v_body[0],
-                          0.0 - v_body[1]])
+                          0.0 - v_body[1],
+                          0.0 - v_body[2]])
         # d(R^T v)/d(dtheta) = [R^T v]x  for a body-frame error perturbation.
         J = skew(v_body)
-        H = np.zeros((2, NX))
+        H = np.zeros((3, NX))
         H[0, IV] = gain * R.T[0, :]
         H[1, IV] = R.T[1, :]
+        H[2, IV] = R.T[2, :]
         H[0, ITH] = gain * J[0, :]
         H[1, ITH] = J[1, :]
+        H[2, ITH] = J[2, :]
         # The scale error is observed through the forward speed only; the
-        # non-holonomic constraint carries no scale.
+        # non-holonomic constraints carry no scale.
         H[0, IOS] = v_body[0]
-        Rm = np.diag([ss ** 2, ls ** 2])
-        ok, nis = self._update(innov, H, Rm, 13.82, "odom")   # chi2(2), p=0.999
+        Rm = np.diag([ss ** 2, ls ** 2, c.odom_vertical_sigma ** 2])
+        ok, nis = self._update(innov, H, Rm, 16.27, "odom")   # chi2(3), p=0.999
         self.last["odom_innov"] = innov
         return ok, nis
 
@@ -560,7 +593,10 @@ class ErrorStateEkf:
         if with_gyro:
             # Stationary means the true body rate is zero, so the current
             # gyro reading is bias: observe b_g directly.
-            innov_g = -self.b_g * 0.0
+            # (A zero innovation here only shrank the bias covariance without
+            # ever correcting the bias, so yaw drifted ~2 deg/s while parked
+            # and the vehicle restarted facing the wrong way.)
+            innov_g = self.last_gyro_raw - self.b_g
             Hg = np.zeros((3, NX))
             Hg[:, IBG] = np.eye(3)
             self._update(innov_g, Hg, np.eye(3) * c.zupt_gyro_sigma ** 2, None, "zupt_g")

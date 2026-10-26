@@ -1,0 +1,14 @@
+base: drone_baseline.yaml
+id: drone_baro_drift
+description: >
+  The barometer drifts by 300 Pa (about 25 m of apparent altitude) over 20 s.
+  GNSS altitude and the rangefinder disagree with it; the estimator's baro
+  bias state and the innovation gate should keep the altitude honest.
+faults:
+  - type: BARO_DRIFT
+    target: barometer
+    onset: 25.0
+    duration: 60.0
+    ramp: 20.0
+    params: {pressure_pa: 300.0}
+    label: barometer drift
