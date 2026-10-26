@@ -111,7 +111,24 @@ export interface BatteryBlock {
  * dashboard feeds it back to the simulator, and the simulator's navigation
  * stack never reads it -- see the note the bridge attaches to this block.
  */
+export interface DroneBlock {
+  phase: string;
+  armed: boolean;
+  landed_estimate: boolean;
+  agl_estimate_m: number | null;
+  alt_setpoint_m: number | null;
+  est_altitude_m: number;
+  vertical_speed_mps: number;
+  thrust_ratio: number;
+  tilt_cmd_deg: number;
+  baro_excluded: boolean;
+  rangefinder_m: number | null;
+}
+
 export interface GroundTruth {
+  agl_m?: number;
+  wind?: number[] | null;
+  crashed?: boolean;
   position: number[];
   velocity: number[];
   yaw_deg: number;
@@ -137,6 +154,7 @@ export interface Telemetry {
   lidar?: LidarOutline;
   battery?: BatteryBlock;
   ground_truth?: GroundTruth;
+  drone?: DroneBlock;
   paused?: boolean;
   finished?: boolean;
   session?: string;
@@ -181,6 +199,7 @@ export interface WorldMessage {
     duration_s: number;
     environment?: string;
   };
+  vehicle?: { type: "ugv" | "drone"; cruise_agl: number | null };
   faults_declared: {
     type: string;
     target: string;
@@ -206,6 +225,7 @@ export type BridgeMessage =
   | { type: "no_session" };
 
 export type ScreenId =
+  | "home"
   | "overview"
   | "simulation"
   | "sensors"

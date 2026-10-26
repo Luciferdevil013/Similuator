@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Card, Stat, num } from "../components/Panels";
 import { FaultRow, newFault } from "../components/FaultEditor";
-import type { FaultEdit, Schema } from "../api";
+import type { FaultEdit, Schema, Vehicle } from "../api";
 import type { HistoryRow } from "../useTelemetry";
 import type { ResultsMessage, Telemetry, WorldMessage } from "../types";
 
@@ -16,6 +16,7 @@ interface Props {
   token: string;
   setToken: (t: string) => void;
   schema: Schema | null;
+  vehicle: Vehicle;
 }
 
 const CSV_COLUMNS: (keyof HistoryRow)[] = [
@@ -58,7 +59,7 @@ function download(name: string, text: string, mime: string) {
  */
 export function ReplayExport({
   history, world, latest, results, sendCommand, authed,
-  commandLog, token, setToken, schema,
+  commandLog, token, setToken, schema, vehicle,
 }: Props) {
   const commandReady = authed;
   const [idx, setIdx] = useState<number | null>(null);
@@ -66,7 +67,7 @@ export function ReplayExport({
   const [speed, setSpeed] = useState(1);
   const [seedDraft, setSeedDraft] = useState<string>("");
   const [liveFault, setLiveFault] = useState<FaultEdit | null>(
-    schema ? newFault(schema, "GNSS_OUTAGE", 0) : null);
+    schema ? newFault(schema, "GNSS_OUTAGE", 0, vehicle) : null);
   const timerRef = useRef<number | undefined>(undefined);
 
   const row = idx === null ? history[history.length - 1] : history[idx];
@@ -302,7 +303,8 @@ export function ReplayExport({
               Inject a <b>new</b> fault into the running simulation, starting now.
               Same allow-list and bounds as the scenario editor.
             </p>
-            <FaultRow schema={schema} fault={liveFault} onChange={setLiveFault} live />
+            <FaultRow schema={schema} fault={liveFault} onChange={setLiveFault} live
+                      vehicle={vehicle} />
             <div className="btn-row">
               <button
                 className="primary"

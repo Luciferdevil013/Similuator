@@ -380,9 +380,10 @@ async def _serve(args) -> None:
     site = web.TCPSite(runner, args.bind, args.port)
     await site.start()
 
-    if args.scenario:
-        p = Path(args.scenario)
-        sid = p.stem
+    for scen in args.scenario or []:
+        if not scen:
+            continue
+        sid = Path(scen).stem
         edit = {"base": sid}
         if args.seed is not None:
             edit["fields"] = {"seed": args.seed}
@@ -390,7 +391,8 @@ async def _serve(args) -> None:
 
     print("ResilienceLab telemetry bridge")
     print("  dashboard  : http://%s:%d/?token=%s" % (args.bind, args.port, token))
-    print("  scenario   : %s" % (args.scenario or "(none; launch from the Lab tab)"))
+    print("  sessions   : %s" % (", ".join(Path(x).stem for x in args.scenario if x)
+                                 or "(none; launch from the Lab tab)"))
     print("  telemetry  : ws://%s:%d/ws/telemetry?session=<id>   (read-only)" % (args.bind, args.port))
     print("  REST API   : http://%s:%d/api/...   (X-Token header for changes)" % (args.bind, args.port))
     print("  ground truth in stream: %s" % (not args.no_truth))
@@ -404,9 +406,9 @@ async def _serve(args) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--scenario",
-                    default=str(ROOT / "experiments/scenarios/baseline_normal.yaml"),
-                    help="scenario for the first session ('' to start with none)")
+    ap.add_argument("--scenario", action="append", default=None,
+                    help="scenario to start as a session; repeat for several "
+                         "(default: baseline_normal; pass '' to start with none)")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--bind", default="127.0.0.1",
                     help="loopback by default; this bridge has no real auth")
@@ -419,6 +421,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-truth", action="store_true",
                     help="omit ground truth from the stream")
     args = ap.parse_args(argv)
+    if args.scenario is None:
+        args.scenario = [str(ROOT / "experiments/scenarios/baseline_normal.yaml")]
     try:
         asyncio.run(_serve(args))
     except KeyboardInterrupt:

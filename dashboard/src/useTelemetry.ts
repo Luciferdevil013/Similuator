@@ -24,6 +24,8 @@ export interface HistoryRow {
   trueY: number | null;
   yawErr: number | null;
   clearance: number | null;
+  agl: number | null;
+  trueAgl: number | null;
 }
 
 const HISTORY_LIMIT = 6000; // 5 minutes at 20 Hz
@@ -148,6 +150,8 @@ export function useTelemetry(sessionId: string | null, token: string): Telemetry
           trueY: gt ? gt.position[1] : null,
           yawErr: gt ? wrap180(msg.estimate.yaw_deg - gt.yaw_deg) : null,
           clearance: msg.mission_progress.min_clearance_m,
+          agl: msg.drone ? msg.drone.agl_estimate_m : null,
+          trueAgl: msg.drone && gt && gt.agl_m !== undefined ? gt.agl_m : null,
         };
         const h = historyRef.current;
         // A paused or finished sim keeps re-sending its last frame; only

@@ -71,7 +71,10 @@ export interface FieldSpec {
   unit: string;
   step: number | null;
   group: string;
+  vehicles: Vehicle[];
 }
+
+export type Vehicle = "ugv" | "drone";
 
 export interface ParamSpec {
   type: "float" | "vec3" | "bool";
@@ -87,6 +90,7 @@ export interface FaultSchema {
   params: Record<string, ParamSpec>;
   defaults?: Record<string, unknown>;
   description: string;
+  vehicles: Vehicle[];
 }
 
 export interface Schema {
@@ -94,6 +98,8 @@ export interface Schema {
   fields: Record<string, FieldSpec>;
   faults: Record<string, FaultSchema>;
   sensors: string[];
+  vehicle_sensors: Record<Vehicle, string[]>;
+  vehicles: Vehicle[];
   max_faults: number;
 }
 
@@ -112,6 +118,7 @@ export interface ScenarioListing {
   source: "builtin" | "custom";
   description?: string;
   environment?: string;
+  vehicle?: Vehicle;
   seed?: number;
   faults?: { type: string; target: string; onset: number; duration: number }[];
   error?: string;
@@ -123,6 +130,7 @@ export interface SessionSummary {
   scenario: string;
   source: string;
   environment: string;
+  vehicle: Vehicle;
   seed: number;
   speed: number;
   paused: boolean;
@@ -177,4 +185,21 @@ export interface BatchSummary {
   jobs: number;
   out_dir: string;
   rows?: SummaryRow[];
+}
+
+export interface SelfTestResult {
+  component: string;
+  name: string;
+  check: string;
+  ok: boolean;
+  detail: string;
+  ms: number;
+}
+
+export interface SelfTestReport {
+  ok: boolean;
+  passed: number;
+  total: number;
+  seconds: number;
+  results: SelfTestResult[];
 }

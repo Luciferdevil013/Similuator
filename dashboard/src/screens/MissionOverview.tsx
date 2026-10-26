@@ -3,6 +3,59 @@ import { Chart } from "../components/Chart";
 import type { HistoryRow } from "../useTelemetry";
 import type { Telemetry, WorldMessage } from "../types";
 
+const PHASES = ["PREFLIGHT", "TAKEOFF", "CRUISE", "DESCEND", "LAND", "LANDED"];
+
+function DronePanel({ latest, history }: { latest: Telemetry; history: HistoryRow[] }) {
+  const d = latest.drone!;
+  const gt = latest.ground_truth;
+  const failsafe = d.phase === "FAILSAFE_LAND";
+  const idx = PHASES.indexOf(d.phase);
+  const wind = gt?.wind ? Math.hypot(gt.wind[0], gt.wind[1]) : null;
+  return (
+    <Card title="Flight" className="span2"
+          right={<span className={`badge ${failsafe ? "bad" : d.armed ? "ok" : ""}`}>
+            {failsafe ? "failsafe landing" : d.armed ? "armed" : "disarmed"}</span>}>
+      <div className="phase-rail">
+        {PHASES.map((p, i) => (
+          <span key={p} className={`phase ${!failsafe && i === idx ? "now" : !failsafe && i < idx ? "done" : ""}`}>
+            {p.toLowerCase()}
+          </span>
+        ))}
+        {failsafe && <span className="phase fail">failsafe land</span>}
+      </div>
+      <div className="stat-row">
+        <Stat label="height (est)" value={num(d.agl_estimate_m, 1)} unit="m"
+              tone={d.agl_estimate_m !== null && d.agl_estimate_m < 5 && d.phase === "CRUISE" ? "warn" : ""} />
+        <Stat label="height (true)" value={gt?.agl_m !== undefined ? num(gt.agl_m, 1) : "n/a"} unit="m" />
+        <Stat label="alt setpoint" value={num(d.alt_setpoint_m, 1)} unit="m" />
+        <Stat label="vertical speed" value={num(d.vertical_speed_mps, 2)} unit="m/s" />
+        <Stat label="thrust / weight" value={num(d.thrust_ratio, 2)}
+              tone={d.thrust_ratio > 1.8 ? "warn" : ""} />
+        <Stat label="tilt cmd" value={num(d.tilt_cmd_deg, 1)} unit="°"
+              tone={d.tilt_cmd_deg > 18 ? "warn" : ""} />
+      </div>
+      <div className="stat-row">
+        <Stat label="rangefinder" value={d.rangefinder_m === null ? "no return" : num(d.rangefinder_m, 2)}
+              unit={d.rangefinder_m === null ? undefined : "m"} />
+        <Stat label="wind (true)" value={wind === null ? "n/a" : num(wind, 1)} unit="m/s"
+              tone={wind !== null && wind > 10 ? "warn" : ""} />
+        <Stat label="barometer" value={d.baro_excluded ? "voted out" : "in use"}
+              tone={d.baro_excluded ? "bad" : "ok"}
+              hint="Excluded when it disagrees with both GNSS and terrain map + rangefinder." />
+        <Stat label="landed (est)" value={d.landed_estimate ? "yes" : "no"} />
+      </div>
+      <Chart
+        rows={history}
+        height={130}
+        series={[
+          { key: "trueAgl", label: "true height (m)", color: "#ff8a3d" },
+          { key: "agl", label: "estimated height (m)", color: "#4de2ff", dashed: true },
+        ]}
+      />
+    </Card>
+  );
+}
+
 interface Props {
   latest: Telemetry;
   world: WorldMessage;
@@ -49,15 +102,20 @@ export function MissionOverview({ latest, world, history }: Props) {
         <div className="progress">
           <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
           <span>
-            {num(p.distance_travelled_m, 0)} m driven · {num(p.distance_to_goal_m, 0)} m
-            to goal
+            {num(p.distance_travelled_m, 0)} m {latest.drone ? "flown" : "driven"} ·{" "}
+            {num(p.distance_to_goal_m, 0)} m to goal
           </span>
         </div>
         <p className="reason">{r.reason}</p>
         {!r.allow_motion && (
-          <p className="alert">Motion inhibited — {r.safe_action ?? "safe action"} held.</p>
+          <p className="alert">
+            {latest.drone ? "Failsafe — landing in place." : `Motion inhibited — ${r.safe_action ?? "safe action"} held.`}
+          </p>
         )}
+        {gt?.crashed && <p className="alert">Vehicle crashed.</p>}
       </Card>
+
+      {latest.drone && <DronePanel latest={latest} history={history} />}
 
       <Card title="Localisation">
         <div className="stat-row">

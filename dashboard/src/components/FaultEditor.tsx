@@ -1,7 +1,19 @@
-import type { FaultEdit, FaultSchema, ParamSpec, Schema } from "../api";
+import type { FaultEdit, FaultSchema, ParamSpec, Schema, Vehicle } from "../api";
+
+/** Fault types that apply to a vehicle. */
+export function faultTypesFor(schema: Schema, vehicle: Vehicle): string[] {
+  return Object.keys(schema.faults).filter((t) => schema.faults[t].vehicles.includes(vehicle));
+}
+
+/** Targets of a fault type that the vehicle actually carries. */
+export function targetsFor(schema: Schema, type: string, vehicle: Vehicle): string[] {
+  const have = new Set([...(schema.vehicle_sensors[vehicle] ?? []), "world"]);
+  return (schema.faults[type]?.targets ?? []).filter((t) => have.has(t));
+}
 
 /** A fresh fault of `type` with the schema's defaults filled in. */
-export function newFault(schema: Schema, type: string, onset = 60): FaultEdit {
+export function newFault(schema: Schema, type: string, onset = 60,
+                         vehicle: Vehicle = "ugv"): FaultEdit {
   const spec = schema.faults[type];
   const params: Record<string, unknown> = { ...(spec.defaults ?? {}) };
   for (const [k, p] of Object.entries(spec.params)) {
@@ -10,7 +22,8 @@ export function newFault(schema: Schema, type: string, onset = 60): FaultEdit {
     if (params[k] === undefined && p.type === "vec3") params[k] = [0, 0, 0];
     if (params[k] === undefined && p.type === "bool") params[k] = false;
   }
-  return { type, target: spec.targets[0], onset, duration: 30, ramp: 0, params };
+  return { type, target: targetsFor(schema, type, vehicle)[0] ?? spec.targets[0],
+           onset, duration: 30, ramp: 0, params };
 }
 
 function pretty(s: string): string {
@@ -78,31 +91,33 @@ function ParamInput({
  * One fault row. `live` hides the onset (a live injection starts "now").
  */
 export function FaultRow({
-  schema, fault, onChange, onRemove, live = false,
+  schema, fault, onChange, onRemove, live = false, vehicle = "ugv",
 }: {
   schema: Schema;
   fault: FaultEdit;
   onChange: (f: FaultEdit) => void;
   onRemove?: () => void;
   live?: boolean;
+  vehicle?: Vehicle;
 }) {
   const spec: FaultSchema | undefined = schema.faults[fault.type];
+  const targets = targetsFor(schema, fault.type, vehicle);
   const set = (patch: Partial<FaultEdit>) => onChange({ ...fault, ...patch });
   return (
     <div className="fault-row">
       <div className="fault-main">
         <select
           value={fault.type}
-          onChange={(e) => onChange({ ...newFault(schema, e.target.value, fault.onset),
+          onChange={(e) => onChange({ ...newFault(schema, e.target.value, fault.onset, vehicle),
                                       duration: fault.duration })}
         >
-          {Object.keys(schema.faults).map((t) => (
+          {faultTypesFor(schema, vehicle).map((t) => (
             <option key={t} value={t}>{pretty(t)}</option>
           ))}
         </select>
-        {spec && spec.targets.length > 1 ? (
+        {targets.length > 1 ? (
           <select value={fault.target} onChange={(e) => set({ target: e.target.value })}>
-            {spec.targets.map((t) => <option key={t} value={t}>{t}</option>)}
+            {targets.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         ) : (
           <span className="chip">{fault.target}</span>

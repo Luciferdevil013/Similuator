@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Card } from "../components/Panels";
 import { FaultRow, newFault } from "../components/FaultEditor";
 import { api } from "../api";
-import type { FaultEdit, ScenarioListing, Schema, SessionSummary } from "../api";
+import type { FaultEdit, ScenarioListing, Schema, SessionSummary, Vehicle } from "../api";
+import { EnvArt } from "../components/EnvArt";
+import { Icon } from "../components/Icons";
 
 interface Props {
   schema: Schema;
@@ -12,7 +14,10 @@ interface Props {
   onLaunched: (s: SessionSummary) => void;
   onBatchStarted: () => void;
   refreshScenarios: () => void;
+  preset?: { vehicle?: Vehicle; environment?: string };
 }
+
+const DEFAULT_BASE: Record<Vehicle, string> = { ugv: "gnss_outage", drone: "drone_gnss_outage" };
 
 type Values = Record<string, number | null>;
 
@@ -90,10 +95,12 @@ function MissionMap({
 }
 
 export function ScenarioLab({
-  schema, scenarios, token, authed, onLaunched, onBatchStarted, refreshScenarios,
+  schema, scenarios, token, authed, onLaunched, onBatchStarted, refreshScenarios, preset,
 }: Props) {
-  const [base, setBase] = useState("gnss_outage");
-  const [env, setEnv] = useState("rolling_hills");
+  const [vehicle, setVehicle] = useState<Vehicle>(preset?.vehicle ?? "ugv");
+  const [base, setBase] = useState(DEFAULT_BASE[preset?.vehicle ?? "ugv"]);
+  const [env, setEnv] = useState(preset?.environment ?? "rolling_hills");
+  const [presetEnvPending, setPresetEnvPending] = useState(!!preset?.environment);
   const [values, setValues] = useState<Values>({});
   const [start, setStart] = useState<number[]>([12, 12]);
   const [goal, setGoal] = useState<number[]>([185, 185]);
@@ -113,7 +120,19 @@ export function ScenarioLab({
       if (!live || !r.ok) return;
       const c = r.data.config;
       setValues(r.data.values);
-      setEnv(c.environment ?? "rolling_hills");
+      const scenarioVehicle = (scenarios.find((x) => x.id === base)?.vehicle ?? vehicle) as Vehicle;
+      setVehicle(scenarioVehicle);
+      if (presetEnvPending && preset?.environment) {
+        // Coming from a Home environment card: apply it over the base scenario.
+        const w = schema.environments[preset.environment].world;
+        const out: Values = { ...r.data.values };
+        for (const [key, val] of Object.entries(w)) out[`world.${key}`] = val;
+        setValues(out);
+        setEnv(preset.environment);
+        setPresetEnvPending(false);
+      } else {
+        setEnv(c.environment ?? "rolling_hills");
+      }
       setStart((c.mission?.start ?? [12, 12]).map(Number));
       setGoal((c.mission?.goal ?? [185, 185]).map(Number));
       setFaults((c.faults ?? []).map((f) => ({
@@ -139,16 +158,24 @@ export function ScenarioLab({
 
   const groups = useMemo(() => {
     const g: Record<string, string[]> = {};
-    for (const [k, f] of Object.entries(schema.fields)) (g[f.group] ??= []).push(k);
+    for (const [k, f] of Object.entries(schema.fields))
+      if (f.vehicles.includes(vehicle)) (g[f.group] ??= []).push(k);
     return g;
-  }, [schema]);
+  }, [schema, vehicle]);
+
+  const chooseVehicle = (v: Vehicle) => {
+    if (v === vehicle) return;
+    setVehicle(v);
+    setBase(DEFAULT_BASE[v]);
+  };
 
   const edit = (extra: Record<string, unknown> = {}) => {
     const fields: Record<string, number> = {};
     for (const [k, v] of Object.entries(values))
-      if (v !== null && v !== undefined && schema.fields[k]) fields[k] = Number(v);
+      if (v !== null && v !== undefined && schema.fields[k]?.vehicles.includes(vehicle))
+        fields[k] = Number(v);
     return {
-      base, environment: env, fields, description,
+      base, vehicle, environment: env, fields, description,
       mission: { start, goal }, faults, ...extra,
     };
   };
@@ -198,10 +225,18 @@ export function ScenarioLab({
 
   return (
     <div className="grid lab">
-      <Card title="1 · Start from" className="span2">
+      <Card title="1 · Vehicle & starting scenario" className="span2">
         <div className="btn-row">
+          <div className="seg" role="tablist" aria-label="vehicle">
+            <button className={vehicle === "ugv" ? "on" : ""} onClick={() => chooseVehicle("ugv")}>
+              <Icon name="rover" size={15} /> Rover
+            </button>
+            <button className={vehicle === "drone" ? "on" : ""} onClick={() => chooseVehicle("drone")}>
+              <Icon name="drone" size={15} /> Drone
+            </button>
+          </div>
           <select value={base} onChange={(e) => setBase(e.target.value)}>
-            {scenarios.filter((s) => !s.error).map((s) => (
+            {scenarios.filter((s) => !s.error && (s.vehicle ?? "ugv") === vehicle).map((s) => (
               <option key={s.id} value={s.id}>
                 {s.id}{s.source === "custom" ? " (custom)" : ""}
               </option>
@@ -216,11 +251,14 @@ export function ScenarioLab({
         <div className="env-grid">
           {Object.entries(schema.environments).map(([k, e]) => (
             <button key={k} className={env === k ? "env sel" : "env"} onClick={() => chooseEnv(k)}>
-              <b>{e.label}</b>
-              <span className="muted small">{e.description}</span>
-              <span className="muted small">
-                relief {e.world.relief} m · {e.world.n_obstacles} obstacles
-              </span>
+              <EnvArt env={k} relief={e.world.relief} obstacles={e.world.n_obstacles} />
+              <div className="meta">
+                <b>{e.label}</b>
+                <span className="muted small">{e.description}</span>
+                <span className="muted small mono">
+                  relief {e.world.relief} m · {e.world.n_obstacles} obstacles
+                </span>
+              </div>
             </button>
           ))}
         </div>
@@ -274,7 +312,7 @@ export function ScenarioLab({
           right={
             <button
               disabled={faults.length >= schema.max_faults}
-              onClick={() => setFaults([...faults, newFault(schema, "GNSS_OUTAGE")])}
+              onClick={() => setFaults([...faults, newFault(schema, "GNSS_OUTAGE", 60, vehicle)])}
             >
               + add fault
             </button>
@@ -282,7 +320,7 @@ export function ScenarioLab({
         >
           {faults.length === 0 && <p className="muted">No faults: a baseline run.</p>}
           {faults.map((f, i) => (
-            <FaultRow key={i} schema={schema} fault={f}
+            <FaultRow key={i} schema={schema} fault={f} vehicle={vehicle}
                       onChange={(nf) => setFaults(faults.map((x, j) => (j === i ? nf : x)))}
                       onRemove={() => setFaults(faults.filter((_, j) => j !== i))} />
           ))}
