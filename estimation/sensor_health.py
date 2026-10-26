@@ -101,6 +101,11 @@ class SensorHealthMonitor:
             else:
                 self._repeat_count[sensor_id] = 0
             self._fingerprint[sensor_id] = fingerprint
+        else:
+            # No digest offered (e.g. an empty scan): nothing to compare, so
+            # the repeat run is broken rather than carried over.
+            self._repeat_count[sensor_id] = 0
+            self._fingerprint.pop(sensor_id, None)
 
         in_range = True
         if value_for_range is not None:

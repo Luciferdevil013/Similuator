@@ -139,6 +139,7 @@ export interface Telemetry {
   ground_truth?: GroundTruth;
   paused?: boolean;
   finished?: boolean;
+  session?: string;
 }
 
 export interface ObstacleSpec {
@@ -173,7 +174,13 @@ export interface WorldMessage {
     goal_tolerance: number;
     timeout_s: number;
   };
-  scenario: { id: string; description: string; seed: number; duration_s: number };
+  scenario: {
+    id: string;
+    description: string;
+    seed: number;
+    duration_s: number;
+    environment?: string;
+  };
   faults_declared: {
     type: string;
     target: string;
@@ -188,11 +195,21 @@ export interface ResultsMessage {
   metrics: Record<string, Record<string, unknown>>;
 }
 
-export type BridgeMessage = Telemetry | WorldMessage | ResultsMessage;
+/** Same scene payload as "world", sent when the scene changes mid-run. */
+export type WorldUpdateMessage = Omit<WorldMessage, "type"> & { type: "world_update" };
+
+export type BridgeMessage =
+  | Telemetry
+  | WorldMessage
+  | WorldUpdateMessage
+  | ResultsMessage
+  | { type: "no_session" };
 
 export type ScreenId =
   | "overview"
   | "simulation"
   | "sensors"
   | "results"
-  | "replay";
+  | "replay"
+  | "lab"
+  | "fleet";

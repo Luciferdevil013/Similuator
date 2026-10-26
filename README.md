@@ -62,6 +62,55 @@ the bridge on port 8787, so keep the bridge running).
 
 ---
 
+## Multiple simulations, environments and editing
+
+The bridge hosts **several independent simulations at once** (up to 6), each with its own
+scenario, environment, seed and speed. Everything is driven from the dashboard:
+
+| Tab | What it does |
+|---|---|
+| **Lab** | Scenario editor. Pick a base scenario and one of 5 **environments** (rolling hills, flat open field, mountain pass, dense forest, rocky desert). Edit any parameter (world size, terrain relief, obstacle count, seed, safety speeds, dead-reckoning budget, sensor rates). Click the map to place the start and goal, and add or edit up to 12 faults with their parameters. Then **launch** it as a new live session, **save** it as a custom scenario, or **run a batch** over many seeds. |
+| **Fleet** | Every live session (progress, state, result) with open / pause / resume / restart / close. Batch sweeps with live progress and a results table. The **run archive** of every recorded trial, with metrics and event log. |
+| **Replay / control** | Controls the selected session: pause, step, restart (optionally with a new seed), speed, and **inject a new fault live**. Faults include GNSS loss or offset, LiDAR dropout, IMU bias, a link loss and a surprise obstacle. |
+| Mission / 3D / Sensors / Results | Show whichever session is selected in the top bar. |
+
+Every edit is validated server-side against an allow-list with bounds
+(`experiment/scenario_schema.py`): unknown fields, out-of-range numbers and unknown fault
+types are refused with a clear message. Saved scenarios go to
+`experiments/scenarios/custom/<id>.yaml`. A scenario file can also extend another with
+`base: _common.yaml`.
+
+Batch sweeps run in worker processes, so they use every CPU core. Live sessions share the
+bridge's one core: the more you run at once, the slower each one goes.
+
+### REST API (used by the dashboard; scriptable too)
+
+Read endpoints are open. Endpoints that change state need the token: `X-Token: <token>` header or `?token=`.
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/info` | editor schema: environments, editable fields with bounds, fault types and params |
+| `GET /api/scenarios`, `GET /api/scenarios/{id}` | list scenarios / get one resolved config |
+| `POST /api/scenarios/validate` | validate an edit without running it |
+| `POST /api/scenarios` · `DELETE /api/scenarios/{id}` | save / delete a custom scenario |
+| `GET /api/sessions` · `POST /api/sessions` · `DELETE /api/sessions/{id}` | list / launch / close live sessions |
+| `POST /api/sessions/{id}/command` | `pause`, `resume`, `step`, `set_speed`, `reset`, `inject_fault`, `inject_declared_fault`, `list_declared_faults` |
+| `GET /api/batches` · `POST /api/batches` · `GET/DELETE /api/batches/{id}` | batch sweeps |
+| `GET /api/runs`, `GET /api/runs/{path}` | run archive |
+| `WS /ws/telemetry?session={id}` | read-only live telemetry |
+
+Example: launch a dense-forest GNSS-outage run with a surprise obstacle:
+
+```bash
+curl -X POST http://127.0.0.1:8787/api/sessions -H 'X-Token: demo' -H 'Content-Type: application/json' -d '{
+  "base": "gnss_outage", "environment": "dense_forest", "speed": 3,
+  "fields": {"seed": 42, "resilience.speed_normal": 1.5},
+  "faults": [{"type": "GNSS_OUTAGE", "onset": 60, "duration": 80},
+             {"type": "OBSTACLE_APPEARS", "onset": 40, "params": {"x": 70, "y": 70}}]}'
+```
+
+---
+
 ## What to show (suggested 3-minute demo)
 
 1. **Start** `./run_demo.sh` (GNSS outage). On the **Mission** tab the rover is `NORMAL`, true
@@ -75,8 +124,11 @@ the bridge on port 8787, so keep the bridge running).
 5. **t = 190 s: GNSS back** → `RECOVERY` (validated for 6 s) → `NORMAL` → the rover reaches the goal.
 6. **Sensors tab:** sensor health table, estimator residuals, learned sensor biases.
 7. **Results tab:** when the run ends it shows RMSE, detection latency, recovery time and false alarms.
-8. **Replay / export:** scrub back through the run, export CSV/JSON, or use the console to `reset`
-   or trigger the declared fault again.
+8. **Replay / control:** scrub back through the run, export CSV/JSON, or **inject a new fault live**
+   (for example a LiDAR dropout: the rover stops at once and resumes when it clears).
+9. **Lab:** pick *Dense forest*, change the seed, click the map to move the goal, add a fault,
+   and **launch**. A second simulation starts next to the first; switch between them in the top bar.
+10. **Fleet:** both sessions side by side. Start a batch over 3 seeds from the Lab and watch it fill in.
 
 Other good scenarios: `lidar_dropout` (stops when it goes blind, resumes when the scanner
 returns) and `comms_loss` (odometry *and* GNSS lost: no valid fallback, so it stops at once).
@@ -88,6 +140,7 @@ returns) and `comms_loss` (odometry *and* GNSS lost: no valid fallback, so it st
 ```bash
 python3 -m experiment.batch                               # all scenarios x seeds 12345 2 7
 python3 -m experiment.batch gnss_outage --seeds 1 2 3 4 5
+python3 -m experiment.batch --environment dense_forest --out runs/env_dense_forest
 ```
 
 Each trial writes `runs/<scenario>_seed<seed>/` (`metrics.json`, `events.csv`, and the large
@@ -114,8 +167,10 @@ nav/            costmap with LiDAR ground segmentation, terrain-aware A*, pure-p
 resilience/     explicit safety state machine:
                 NORMAL → DEGRADED → LIMITED_OPERATION → SAFE_ACTION → RECOVERY
 experiment/     scenario runner (closes the loop), recorder (only consumer of ground truth),
-                metrics, batch runner
-bridge/         aiohttp WebSocket bridge: read-only telemetry + token-gated allow-listed commands
+                metrics, batch runner, scenario_schema (environments + validated editing)
+bridge/         aiohttp server: multi-session manager, REST API, batch jobs, read-only
+                WebSocket telemetry, token-gated allow-listed commands
+tests/          pytest suite (schema, safety FSM, EKF, closed loop, API)
 dashboard/      React + TypeScript + Three.js operator UI (served by the bridge from dashboard/dist)
 experiments/    scenario definitions (YAML)
 runs/           experiment outputs
@@ -144,4 +199,10 @@ Data flow: `simulator → sensor messages → EKF / monitors → resilience FSM 
   follows the offset before the monitor confirms it.
 - During long dead-reckoning the reported σ underestimates the true error. The DR budget, not
   σ, is what makes the rover stop.
-- No automated test suite yet.
+
+## Tests
+
+```bash
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q tests        # ~30 s
+```

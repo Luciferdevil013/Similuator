@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTelemetry } from "./useTelemetry";
 import type { ScreenId } from "./types";
 import { StateBadge, num } from "./components/Panels";
@@ -7,18 +7,79 @@ import { Simulation3D } from "./screens/Simulation3D";
 import { SensorDiagnostics } from "./screens/SensorDiagnostics";
 import { ExperimentResults } from "./screens/ExperimentResults";
 import { ReplayExport } from "./screens/ReplayExport";
+import { ScenarioLab } from "./screens/ScenarioLab";
+import { Fleet } from "./screens/Fleet";
+import { api, initialToken, storeToken } from "./api";
+import type { ScenarioListing, Schema, SessionSummary } from "./api";
 
-const SCREENS: { id: ScreenId; label: string }[] = [
-  { id: "overview", label: "Mission" },
-  { id: "simulation", label: "3D view" },
-  { id: "sensors", label: "Sensors" },
-  { id: "results", label: "Results" },
-  { id: "replay", label: "Replay / export" },
+const SCREENS: { id: ScreenId; label: string; needsSession: boolean }[] = [
+  { id: "overview", label: "Mission", needsSession: true },
+  { id: "simulation", label: "3D view", needsSession: true },
+  { id: "sensors", label: "Sensors", needsSession: true },
+  { id: "results", label: "Results", needsSession: true },
+  { id: "replay", label: "Replay / control", needsSession: true },
+  { id: "lab", label: "Lab", needsSession: false },
+  { id: "fleet", label: "Fleet", needsSession: false },
 ];
 
 export default function App() {
-  const t = useTelemetry();
+  const [token, setTokenState] = useState(initialToken);
+  const [authed, setAuthed] = useState(false);
+  const [schema, setSchema] = useState<Schema | null>(null);
+  const [scenarios, setScenarios] = useState<ScenarioListing[]>([]);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [bridgeUp, setBridgeUp] = useState(true);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [screen, setScreen] = useState<ScreenId>("overview");
+
+  const t = useTelemetry(sessionId, token);
+
+  const setToken = useCallback((v: string) => {
+    storeToken(v);
+    setTokenState(v);
+  }, []);
+
+  useEffect(() => {
+    api.getAuthed<{ authed: boolean; schema: Schema }>("/api/info", token).then((r) => {
+      if (r.ok) {
+        setSchema(r.data.schema);
+        setAuthed(r.data.authed);
+      }
+    });
+  }, [token]);
+
+  const refreshScenarios = useCallback(() => {
+    api.get<{ scenarios: ScenarioListing[] }>("/api/scenarios").then((r) => {
+      if (r.ok) setScenarios(r.data.scenarios);
+    });
+  }, []);
+  useEffect(refreshScenarios, [refreshScenarios]);
+
+  const refreshSessions = useCallback(async () => {
+    const r = await api.get<{ sessions: SessionSummary[] }>("/api/sessions");
+    setBridgeUp(r.ok);
+    if (!r.ok) return;
+    setSessions(r.data.sessions);
+    // Follow the first session until the user picks one; drop a closed one.
+    setSessionId((cur) => {
+      const ids = r.data.sessions.map((s) => s.id);
+      if (cur && ids.includes(cur)) return cur;
+      return ids[0] ?? null;
+    });
+  }, []);
+  useEffect(() => {
+    refreshSessions();
+    const iv = window.setInterval(refreshSessions, 2000);
+    return () => window.clearInterval(iv);
+  }, [refreshSessions]);
+
+  const openSession = (id: string) => {
+    setSessionId(id);
+    setScreen("overview");
+  };
+
+  const current = SCREENS.find((s) => s.id === screen)!;
+  const showSessionScreen = current.needsSession;
 
   return (
     <div className="app">
@@ -35,30 +96,58 @@ export default function App() {
               onClick={() => setScreen(s.id)}
             >
               {s.label}
+              {s.id === "fleet" && sessions.length > 0 && (
+                <span className="count">{sessions.length}</span>
+              )}
             </button>
           ))}
         </div>
         <div className="nav-right">
+          <select
+            className="session-select"
+            value={sessionId ?? ""}
+            onChange={(e) => setSessionId(e.target.value || null)}
+            title="simulation session shown in the Mission/3D/Sensors/Results/Replay tabs"
+          >
+            {sessions.length === 0 && <option value="">no sessions</option>}
+            {sessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.id} · {s.label}
+              </option>
+            ))}
+          </select>
           {t.latest && <StateBadge state={t.latest.resilience.state} />}
           {t.latest && <span className="clock">t = {num(t.latest.t, 1)} s</span>}
-          <span className={t.connected ? "dot ok" : "dot bad"} />
+          <span className={bridgeUp ? "dot ok" : "dot bad"} />
           <span className="muted small">
-            {t.connected ? "bridge connected" : "bridge offline"}
+            {bridgeUp ? (authed ? "bridge · control" : "bridge · read-only") : "bridge offline"}
           </span>
         </div>
       </nav>
 
       <main>
-        {!t.connected && !t.latest && (
+        {!bridgeUp && (
           <div className="splash">
             <h1>Waiting for the telemetry bridge</h1>
             <p>Start it with:</p>
-            <pre>
-python3 -m bridge.telemetry_server \
-  --scenario experiments/scenarios/baseline_normal.yaml
-            </pre>
+            <pre>./run_demo.sh</pre>
+            <p className="muted">The dashboard reconnects on its own once the bridge is up.</p>
+          </div>
+        )}
+
+        {bridgeUp && showSessionScreen && !sessionId && (
+          <div className="splash">
+            <h1>No simulation running</h1>
+            <p className="muted">Design a scenario and launch it from the Lab.</p>
+            <button className="primary" onClick={() => setScreen("lab")}>Open the Lab</button>
+          </div>
+        )}
+
+        {showSessionScreen && sessionId && !t.latest && bridgeUp && (
+          <div className="splash">
+            <h1>{t.missing ? "Session closed" : "Building the world…"}</h1>
             <p className="muted">
-              The dashboard reconnects on its own once the bridge is up.
+              {t.missing ? "Pick another session from the menu." : "Generating terrain and obstacles."}
             </p>
           </div>
         )}
@@ -72,20 +161,45 @@ python3 -m bridge.telemetry_server \
         {t.latest && screen === "sensors" && (
           <SensorDiagnostics latest={t.latest} history={t.history} />
         )}
-        {screen === "results" && (
+        {sessionId && t.latest && screen === "results" && (
           <ExperimentResults results={t.results} latest={t.latest} world={t.world} />
         )}
-        {screen === "replay" && (
+        {sessionId && t.latest && screen === "replay" && (
           <ReplayExport
             history={t.history}
             world={t.world}
             latest={t.latest}
             results={t.results}
             sendCommand={t.sendCommand}
-            commandReady={t.commandReady}
+            authed={authed}
             commandLog={t.commandLog}
-            token={t.token}
-            setToken={t.setToken}
+            token={token}
+            setToken={setToken}
+            schema={schema}
+          />
+        )}
+        {screen === "lab" && schema && (
+          <ScenarioLab
+            schema={schema}
+            scenarios={scenarios}
+            token={token}
+            authed={authed}
+            onLaunched={(s) => {
+              refreshSessions();
+              openSession(s.id);
+            }}
+            onBatchStarted={() => setScreen("fleet")}
+            refreshScenarios={refreshScenarios}
+          />
+        )}
+        {screen === "fleet" && (
+          <Fleet
+            sessions={sessions}
+            current={sessionId}
+            token={token}
+            authed={authed}
+            onOpen={openSession}
+            refreshSessions={refreshSessions}
           />
         )}
       </main>

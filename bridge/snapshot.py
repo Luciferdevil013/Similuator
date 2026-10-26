@@ -106,6 +106,7 @@ def world_static(runner) -> dict:
             "description": runner.cfg.description,
             "seed": int(runner.cfg.seed),
             "duration_s": _f(runner.cfg.duration),
+            "environment": runner.cfg.environment,
         },
         "faults_declared": [
             {"type": s.fault_type.name, "target": s.target,

@@ -7,6 +7,7 @@ is the tool that does that:
     python3 -m experiment.batch                         # every scenario, seeds 12345 2 7
     python3 -m experiment.batch gnss_outage lidar_dropout --seeds 1 2 3
     python3 -m experiment.batch --jobs 2 --out runs
+    python3 -m experiment.batch --environment dense_forest --out runs/env_dense_forest
 
 Each trial writes runs/<scenario>_seed<seed>/ (result.json, timeseries.csv,
 metrics.json, events.csv). The batch then writes runs/summary.csv and
@@ -36,15 +37,31 @@ COLUMNS = [
 
 
 def available_scenarios() -> list[str]:
-    return sorted(p.stem for p in SCENARIO_DIR.glob("*.yaml") if not p.stem.startswith("_"))
+    from experiment.scenario_schema import list_scenarios
+    return [s["id"] for s in list_scenarios() if "error" not in s]
 
 
-def _run_one(scenario: str, seed: int, out_dir: str) -> dict:
+def _run_one(scenario: str, seed: int, out_dir: str, environment: str | None = None) -> dict:
     # Imported in the worker so each process builds its own simulator.
-    from experiment.runner import run_scenario
+    from experiment.scenario_schema import build_config
+    edit = {"base": scenario}
+    if environment:
+        edit["environment"] = environment
+    return run_config(build_config(edit), seed, out_dir)
+
+
+def run_config(raw: dict, seed: int, out_dir: str) -> dict:
+    """Run one trial of an already-resolved scenario dict. Process-pool safe."""
+    from experiment.runner import ScenarioConfig, ScenarioRunner
     t0 = time.time()
-    res = run_scenario(SCENARIO_DIR / ("%s.yaml" % scenario), out_dir, seed=seed)
-    return {"row": summary_row(res["metrics"]), "wall_s": time.time() - t0}
+    cfg = ScenarioConfig.from_dict(raw)
+    cfg.seed = int(seed)
+    runner = ScenarioRunner(cfg)
+    res = runner.run()
+    d = Path(out_dir) / ("%s_seed%d" % (cfg.id, cfg.seed))
+    runner.recorder.write(d, metrics=res["metrics"])
+    return {"row": summary_row(res["metrics"]), "wall_s": time.time() - t0,
+            "dir": str(d)}
 
 
 def summary_row(m: dict) -> dict:
@@ -133,6 +150,9 @@ def main(argv=None) -> int:
     ap.add_argument("--seeds", nargs="+", type=int, default=list(DEFAULT_SEEDS))
     ap.add_argument("--out", default=str(ROOT / "runs"))
     ap.add_argument("--jobs", type=int, default=4, help="parallel worker processes")
+    ap.add_argument("--environment", default=None,
+                    help="apply an environment preset to every scenario "
+                         "(rolling_hills, flat_open, mountain_pass, dense_forest, rocky_desert)")
     args = ap.parse_args(argv)
 
     known = available_scenarios()
@@ -148,7 +168,8 @@ def main(argv=None) -> int:
     print("running %d trial(s) on %d worker(s) -> %s" % (len(jobs), args.jobs, out))
     rows = []
     with ProcessPoolExecutor(max_workers=max(1, args.jobs)) as ex:
-        futs = {ex.submit(_run_one, s, sd, str(out)): (s, sd) for s, sd in jobs}
+        futs = {ex.submit(_run_one, s, sd, str(out), args.environment): (s, sd)
+                for s, sd in jobs}
         for f in as_completed(futs):
             s, sd = futs[f]
             try:

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api } from "./api";
 import type {
   BridgeMessage,
   ResultsMessage,
@@ -40,75 +41,87 @@ function wrap180(d: number): number {
   return x;
 }
 
-/** `?token=...` in the page URL wins, so a demo link can carry the token. */
-function initialToken(): string {
-  const fromUrl = new URLSearchParams(window.location.search).get("token");
-  if (fromUrl) return fromUrl;
-  try {
-    return localStorage.getItem("rl.token") ?? "";
-  } catch {
-    return "";
-  }
-}
-
 export interface TelemetryState {
   connected: boolean;
+  /** The bridge answered but the selected session does not exist. */
+  missing: boolean;
   error: string | null;
   world: WorldMessage | null;
   latest: Telemetry | null;
   results: ResultsMessage["metrics"] | null;
   history: HistoryRow[];
   path: number[][];
-  /** Send an allowlisted command. Resolves with the bridge's reply. */
-  sendCommand: (command: string, args?: Record<string, unknown>) => void;
-  commandReady: boolean;
+  /** Send an allow-listed command to this session. */
+  sendCommand: (command: string, args?: Record<string, unknown>) => Promise<boolean>;
   commandLog: string[];
-  setToken: (t: string) => void;
-  token: string;
 }
 
-export function useTelemetry(): TelemetryState {
+export function useTelemetry(sessionId: string | null, token: string): TelemetryState {
   const [connected, setConnected] = useState(false);
+  const [missing, setMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [world, setWorld] = useState<WorldMessage | null>(null);
   const [latest, setLatest] = useState<Telemetry | null>(null);
   const [results, setResults] = useState<ResultsMessage["metrics"] | null>(null);
   const [path, setPath] = useState<number[][]>([]);
-  const [commandReady, setCommandReady] = useState(false);
   const [commandLog, setCommandLog] = useState<string[]>([]);
-  const [token, setToken] = useState<string>(initialToken);
 
   // History lives in a ref: it is appended at 20 Hz and only the screens that
   // draw it need to re-render, so it must not drive React state on every frame.
   const historyRef = useRef<HistoryRow[]>([]);
   const [historyVersion, bumpHistory] = useState(0);
-  const cmdRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
+    // A new session is a different simulation: drop everything from the old one.
+    historyRef.current = [];
+    bumpHistory((n) => n + 1);
+    setWorld(null);
+    setLatest(null);
+    setResults(null);
+    setPath([]);
+    setMissing(false);
+    if (!sessionId) {
+      setConnected(false);
+      return;
+    }
+
     let ws: WebSocket | null = null;
     let retry: number | undefined;
     let closed = false;
     let frames = 0;
 
     const connect = () => {
-      ws = new WebSocket(wsUrl("/ws/telemetry"));
+      ws = new WebSocket(wsUrl("/ws/telemetry?session=" + encodeURIComponent(sessionId)));
       ws.onopen = () => {
         setConnected(true);
         setError(null);
       };
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         setConnected(false);
+        if (ev.code === 4404 || ev.code === 4410) {
+          setMissing(true);
+          return;
+        }
         if (!closed) retry = window.setTimeout(connect, 1200);
       };
       ws.onerror = () => setError("telemetry socket error");
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data) as BridgeMessage;
+        if (msg.type === "no_session") {
+          setMissing(true);
+          return;
+        }
         if (msg.type === "world") {
           setWorld(msg);
           historyRef.current = [];
           bumpHistory((n) => n + 1);
           setPath([]);
           setResults(null);
+          return;
+        }
+        if (msg.type === "world_update") {
+          // Same run, changed scene (an obstacle was added): keep history.
+          setWorld({ ...msg, type: "world" });
           return;
         }
         if (msg.type === "results") {
@@ -153,58 +166,28 @@ export function useTelemetry(): TelemetryState {
       if (retry) window.clearTimeout(retry);
       ws?.close();
     };
-  }, []);
+  }, [sessionId]);
 
-  // Command socket: opened only when a token is present.
-  useEffect(() => {
-    if (!token) {
-      setCommandReady(false);
-      return;
-    }
-    const ws = new WebSocket(
-      wsUrl("/ws/command") + "?token=" + encodeURIComponent(token)
-    );
-    cmdRef.current = ws;
-    ws.onmessage = (ev) => {
-      const r = JSON.parse(ev.data);
-      if (r.type === "ready") setCommandReady(true);
-      if (r.type === "error") setCommandReady(false);
+  const sendCommand = useCallback(
+    async (command: string, args: Record<string, unknown> = {}) => {
+      if (!sessionId) return false;
+      const r = await api.post<{ result?: unknown }>(
+        `/api/sessions/${encodeURIComponent(sessionId)}/command`,
+        token,
+        { command, args }
+      );
       setCommandLog((log) =>
         [
-          r.type === "error"
-            ? `refused: ${r.error}`
-            : `${r.command ?? r.type}: ${JSON.stringify(r.result ?? r)}`,
+          r.ok
+            ? `${command}: ${JSON.stringify(r.data.result ?? {})}`
+            : `refused (${command}): ${(r.errors ?? ["error"]).join("; ")}`,
           ...log,
         ].slice(0, 40)
       );
-    };
-    ws.onclose = () => setCommandReady(false);
-    return () => {
-      cmdRef.current = null;
-      ws.close();
-    };
-  }, [token]);
-
-  const sendCommand = useCallback(
-    (command: string, args: Record<string, unknown> = {}) => {
-      const ws = cmdRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        setCommandLog((l) => ["not connected: enter the bridge token", ...l]);
-        return;
-      }
-      ws.send(JSON.stringify({ command, args, id: command }));
+      return r.ok;
     },
-    []
+    [sessionId, token]
   );
-
-  const persistToken = useCallback((t: string) => {
-    try {
-      localStorage.setItem("rl.token", t);
-    } catch {
-      /* storage unavailable: the token still works for this session */
-    }
-    setToken(t);
-  }, []);
 
   // The ring buffer is mutated in place, so hand the screens a fresh array on
   // each bump; otherwise memoised consumers (the charts) never see new rows.
@@ -215,6 +198,7 @@ export function useTelemetry(): TelemetryState {
 
   return {
     connected,
+    missing,
     error,
     world,
     latest,
@@ -222,9 +206,6 @@ export function useTelemetry(): TelemetryState {
     history,
     path,
     sendCommand,
-    commandReady,
     commandLog,
-    setToken: persistToken,
-    token,
   };
 }

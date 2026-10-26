@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Card, Stat, num } from "../components/Panels";
+import { FaultRow, newFault } from "../components/FaultEditor";
+import type { FaultEdit, Schema } from "../api";
 import type { HistoryRow } from "../useTelemetry";
 import type { ResultsMessage, Telemetry, WorldMessage } from "../types";
 
@@ -8,11 +10,12 @@ interface Props {
   world: WorldMessage | null;
   latest: Telemetry | null;
   results: ResultsMessage["metrics"] | null;
-  sendCommand: (c: string, a?: Record<string, unknown>) => void;
-  commandReady: boolean;
+  sendCommand: (c: string, a?: Record<string, unknown>) => Promise<boolean>;
+  authed: boolean;
   commandLog: string[];
   token: string;
   setToken: (t: string) => void;
+  schema: Schema | null;
 }
 
 const CSV_COLUMNS: (keyof HistoryRow)[] = [
@@ -54,12 +57,16 @@ function download(name: string, text: string, mime: string) {
  * nobody can reproduce.
  */
 export function ReplayExport({
-  history, world, latest, results, sendCommand, commandReady,
-  commandLog, token, setToken,
+  history, world, latest, results, sendCommand, authed,
+  commandLog, token, setToken, schema,
 }: Props) {
+  const commandReady = authed;
   const [idx, setIdx] = useState<number | null>(null);
   const [tokenDraft, setTokenDraft] = useState(token);
   const [speed, setSpeed] = useState(1);
+  const [seedDraft, setSeedDraft] = useState<string>("");
+  const [liveFault, setLiveFault] = useState<FaultEdit | null>(
+    schema ? newFault(schema, "GNSS_OUTAGE", 0) : null);
   const timerRef = useRef<number | undefined>(undefined);
 
   const row = idx === null ? history[history.length - 1] : history[idx];
@@ -205,7 +212,8 @@ export function ReplayExport({
         <p className="muted small">
           Telemetry is read-only. Commands need the token the bridge prints at
           startup, and only the verbs below exist — the browser cannot name a
-          topic, a node or a Python attribute.
+          topic, a node or a Python attribute. Commands apply to the session
+          selected in the top bar.
         </p>
         <div className="btn-row">
           <input
@@ -234,7 +242,23 @@ export function ReplayExport({
             disabled={!commandReady}
             onClick={() => sendCommand("reset", {})}
           >
-            reset
+            restart
+          </button>
+        </div>
+        <div className="btn-row">
+          <input
+            className="token"
+            style={{ flex: "0 1 140px" }}
+            placeholder="new seed"
+            value={seedDraft}
+            onChange={(e) => setSeedDraft(e.target.value.replace(/[^0-9]/g, ""))}
+          />
+          <button
+            disabled={!commandReady || !seedDraft}
+            onClick={() => sendCommand("reset", { seed: Number(seedDraft) })}
+            title="Restart this session on a different random map / noise sequence"
+          >
+            restart with seed
           </button>
         </div>
         <div className="btn-row">
@@ -269,6 +293,24 @@ export function ReplayExport({
                   inject {f.type.replace(/_/g, " ").toLowerCase()}
                 </button>
               ))}
+            </div>
+          </>
+        )}
+        {schema && liveFault && (
+          <>
+            <p className="muted small">
+              Inject a <b>new</b> fault into the running simulation, starting now.
+              Same allow-list and bounds as the scenario editor.
+            </p>
+            <FaultRow schema={schema} fault={liveFault} onChange={setLiveFault} live />
+            <div className="btn-row">
+              <button
+                className="primary"
+                disabled={!commandReady || !!latest?.finished}
+                onClick={() => sendCommand("inject_fault", { fault: liveFault })}
+              >
+                ⚡ inject now
+              </button>
             </div>
           </>
         )}

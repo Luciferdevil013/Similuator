@@ -28,7 +28,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-import yaml
 
 from estimation.ekf import EkfConfig, ErrorStateEkf
 from estimation.gnss_monitor import GnssMonitor, GnssMonitorConfig
@@ -76,6 +75,7 @@ DETAIL_PROFILES = {
 class ScenarioConfig:
     id: str = "unnamed"
     description: str = ""
+    environment: str = "rolling_hills"
     seed: int = 12345
     duration: float = 420.0
     physics_dt: float = 0.0025
@@ -94,8 +94,12 @@ class ScenarioConfig:
 
     @staticmethod
     def load(path: str | Path) -> "ScenarioConfig":
-        with open(path) as fh:
-            raw = yaml.safe_load(fh) or {}
+        # load_raw resolves an optional `base:` file the scenario extends.
+        from experiment.scenario_schema import load_raw
+        return ScenarioConfig.from_dict(load_raw(path))
+
+    @staticmethod
+    def from_dict(raw: dict) -> "ScenarioConfig":
         known = {f for f in ScenarioConfig.__dataclass_fields__}
         return ScenarioConfig(**{k: v for k, v in raw.items() if k in known})
 
@@ -146,19 +150,9 @@ class ScenarioRunner:
 
         # Obstacles that appear mid-run come from OBSTACLE_APPEARS faults.
         self.surprise_obstacles: list[Obstacle] = []
-        for i, f in enumerate(cfg.faults):
-            if str(f.get("type", "")).upper() != "OBSTACLE_APPEARS":
-                continue
-            p = f.get("params", {})
-            obs = Obstacle(
-                oid="surprise_%d" % i, kind=p.get("kind", "cylinder"),
-                x=float(p.get("x", 0.0)), y=float(p.get("y", 0.0)),
-                height=float(p.get("height", 2.2)), radius=float(p.get("radius", 1.3)),
-                half_x=float(p.get("half_x", 1.5)), half_y=float(p.get("half_y", 0.7)),
-                yaw=float(p.get("yaw", 0.0)), label="surprise",
-                spawn_time=float(f.get("onset", 0.0)), known_a_priori=False)
-            self.world.add_obstacle(obs)
-            self.surprise_obstacles.append(obs)
+        for f in cfg.faults:
+            if str(f.get("type", "")).upper() == "OBSTACLE_APPEARS":
+                self._spawn_surprise(f, float(f.get("onset", 0.0)))
 
         # --- vehicle
         vp = dict(cfg.vehicle.get("params", {}))
@@ -188,14 +182,7 @@ class ScenarioRunner:
         # --- fault injection + recording
         self.injector = FaultInjector(cfg.id, self.rng.stream("faults"))
         for f in cfg.faults:
-            self.injector.add(FaultSpec(
-                fault_type=FaultType[str(f["type"]).upper()],
-                target=str(f.get("target", "world")),
-                onset=float(f.get("onset", 0.0)),
-                duration=float(f.get("duration", -1.0)),
-                ramp=float(f.get("ramp", 0.0)),
-                params=dict(f.get("params", {})),
-                label=str(f.get("label", ""))))
+            self.injector.add(self._fault_spec(f, float(f.get("onset", 0.0))))
         self.injector.bind(self.sensors, self.world, self.ugv)
 
         self.truth_pub = GroundTruthPublisher(rate_hz=50.0)
@@ -229,6 +216,47 @@ class ScenarioRunner:
         self._last_odom_speed = 0.0
         self._expected_counts = {sid: 0 for sid in self.sensors}
         self.wall_time = 0.0
+
+    @staticmethod
+    def _fault_spec(f: dict, onset: float) -> FaultSpec:
+        return FaultSpec(
+            fault_type=FaultType[str(f["type"]).upper()],
+            target=str(f.get("target", "world")),
+            onset=onset,
+            duration=float(f.get("duration", -1.0)),
+            ramp=float(f.get("ramp", 0.0)),
+            params=dict(f.get("params", {})),
+            label=str(f.get("label", "")))
+
+    def _spawn_surprise(self, f: dict, onset: float) -> Obstacle:
+        p = f.get("params", {})
+        obs = Obstacle(
+            oid="surprise_%d" % len(self.surprise_obstacles),
+            kind=p.get("kind", "cylinder"),
+            x=float(p.get("x", 0.0)), y=float(p.get("y", 0.0)),
+            height=float(p.get("height", 2.2)), radius=float(p.get("radius", 1.3)),
+            half_x=float(p.get("half_x", 1.5)), half_y=float(p.get("half_y", 0.7)),
+            yaw=float(p.get("yaw", 0.0)), label="surprise",
+            spawn_time=onset, known_a_priori=False)
+        self.world.add_obstacle(obs)
+        self.surprise_obstacles.append(obs)
+        return obs
+
+    def add_fault(self, f: dict) -> FaultSpec:
+        """Inject a fault into the running simulation, starting now.
+
+        `f` must already be validated (experiment.scenario_schema.validate_fault).
+        It is recorded and scored exactly like a declared fault: the injector
+        logs its onset, the monitors are not told, and the recorder's
+        fault-window list is refreshed so false-alarm scoring stays honest.
+        """
+        t = float(self.clock.t)
+        if str(f["type"]).upper() == "OBSTACLE_APPEARS":
+            self._spawn_surprise(f, t)
+        spec = self._fault_spec(f, t)
+        self.injector.add(spec)
+        self.recorder.fault_windows = self.injector.active_windows()
+        return spec
 
     def _build_sensors(self) -> None:
         s = self.cfg.sensors
@@ -408,9 +436,17 @@ class ScenarioRunner:
 
         # --- LiDAR: costmap integration and the controller's obstacle view
         for scan, cloud in S["lidar"].poll(t):
+            any_return = bool(np.isfinite(scan.ranges).any())
             self.health.report("lidar", scan.header.stamp, t,
-                               fingerprint=float(np.nansum(np.where(np.isfinite(scan.ranges),
-                                                                    scan.ranges, 0.0))),
+                               # A scan with no returns (open ground, nothing
+                               # in range) is legitimately identical every
+                               # time; fingerprinting it flagged a healthy
+                               # scanner STALE and stopped the vehicle. Only
+                               # scans with content can show a frozen payload;
+                               # timeouts and frozen stamps are still caught.
+                               fingerprint=(float(np.nansum(np.where(np.isfinite(scan.ranges),
+                                                                     scan.ranges, 0.0)))
+                                            if any_return else None),
                                value_for_range=float(np.nanmin(
                                    np.where(np.isfinite(scan.ranges), scan.ranges, np.inf))
                                    if np.isfinite(scan.ranges).any() else 1.0))
@@ -698,6 +734,7 @@ class ScenarioRunner:
     def results(self) -> dict:
         t = self.clock.t
         self.recorder.fault_events = self.injector.summary()
+        self.recorder.fault_windows = self.injector.active_windows()
         self.recorder.state_transitions = list(self.resilience.transitions)
         self.recorder.sensor_stats = {
             sid: {"expected": int(np.floor(t * s.rate_hz)) + 1,
