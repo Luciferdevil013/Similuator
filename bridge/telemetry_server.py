@@ -52,6 +52,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SESSIONS = web.AppKey("sessions", SessionManager)
 BATCHES = web.AppKey("batches", BatchManager)
 TOKEN = web.AppKey("token", str)
+SELFTEST = web.AppKey("selftest", dict)
 
 
 def _json_error(status: int, errors) -> web.Response:
@@ -65,6 +66,7 @@ def make_app(sessions: SessionManager, token: str) -> web.Application:
     app[SESSIONS] = sessions
     app[BATCHES] = BatchManager()
     app[TOKEN] = token
+    app[SELFTEST] = {}
 
     # -- helpers -------------------------------------------------------
     def authed(request: web.Request) -> bool:
@@ -197,14 +199,32 @@ def make_app(sessions: SessionManager, token: str) -> web.Application:
         data = await body(request)
         try:
             raw = resolve_edit(data)
+            edit = {k: v for k, v in data.items() if k not in ("label", "speed")}
             s = sessions.create(raw, label=str(data.get("label", ""))[:60],
                                 speed=float(data.get("speed", 1.0)),
-                                source=str(data.get("base", "")))
+                                source=str(data.get("base", "")), edit=edit)
         except schema.ScenarioError as exc:
             return _json_error(422, exc.errors)
         except (ValueError, TypeError) as exc:
             return _json_error(422, str(exc))
         return web.json_response({"ok": True, "session": s.summary()})
+
+    @require_token
+    async def api_session_patch(request: web.Request) -> web.Response:
+        """Change a running session: environment, vehicle, faults, any field."""
+        s = sessions.get(request.match_info["sid"])
+        if s is None:
+            return _json_error(404, "no such session")
+        data = await body(request)
+        edit = dict(s.edit)
+        edit.update({k: v for k, v in data.items() if k not in ("label", "speed")})
+        try:
+            result = s.reconfigure(edit)
+        except schema.ScenarioError as exc:
+            return _json_error(422, exc.errors)
+        if "label" in data:
+            s.label = str(data["label"])[:60]
+        return web.json_response({"ok": True, "result": result, "session": s.summary()})
 
     @require_token
     async def api_session_delete(request: web.Request) -> web.Response:
@@ -285,6 +305,21 @@ def make_app(sessions: SessionManager, token: str) -> web.Application:
             return _json_error(404, "no such run")
         return web.json_response({"ok": True, **r})
 
+    @require_token
+    async def api_selftest(request: web.Request) -> web.Response:
+        """Run the component self-test in a worker process (CPU-bound)."""
+        from concurrent.futures import ProcessPoolExecutor
+        from experiment.selftest import run_all
+        only = request.query.get("only") or None
+        loop = asyncio.get_running_loop()
+        with ProcessPoolExecutor(max_workers=1) as ex:
+            report = await loop.run_in_executor(ex, run_all, only)
+        request.app[SELFTEST]["last"] = report
+        return web.json_response({"ok": True, "report": report})
+
+    async def api_selftest_last(request: web.Request) -> web.Response:
+        return web.json_response({"ok": True, "report": request.app[SELFTEST].get("last")})
+
     async def health(_r: web.Request) -> web.Response:
         return web.json_response({"ok": True, "sessions": sessions.list()})
 
@@ -301,6 +336,9 @@ def make_app(sessions: SessionManager, token: str) -> web.Application:
     r.add_get("/api/sessions", api_sessions)
     r.add_post("/api/sessions", api_session_create)
     r.add_delete("/api/sessions/{sid}", api_session_delete)
+    r.add_patch("/api/sessions/{sid}", api_session_patch)
+    r.add_post("/api/selftest", api_selftest)
+    r.add_get("/api/selftest", api_selftest_last)
     r.add_post("/api/sessions/{sid}/command", api_session_command)
     r.add_get("/api/batches", api_batches)
     r.add_post("/api/batches", api_batch_start)
@@ -348,7 +386,7 @@ async def _serve(args) -> None:
         edit = {"base": sid}
         if args.seed is not None:
             edit["fields"] = {"seed": args.seed}
-        sessions.create(schema.build_config(edit), speed=args.speed, source=sid)
+        sessions.create(schema.build_config(edit), speed=args.speed, source=sid, edit=edit)
 
     print("ResilienceLab telemetry bridge")
     print("  dashboard  : http://%s:%d/?token=%s" % (args.bind, args.port, token))

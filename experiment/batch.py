@@ -52,11 +52,11 @@ def _run_one(scenario: str, seed: int, out_dir: str, environment: str | None = N
 
 def run_config(raw: dict, seed: int, out_dir: str) -> dict:
     """Run one trial of an already-resolved scenario dict. Process-pool safe."""
-    from experiment.runner import ScenarioConfig, ScenarioRunner
+    from experiment.runner import ScenarioConfig, make_runner
     t0 = time.time()
     cfg = ScenarioConfig.from_dict(raw)
     cfg.seed = int(seed)
-    runner = ScenarioRunner(cfg)
+    runner = make_runner(cfg)
     res = runner.run()
     d = Path(out_dir) / ("%s_seed%d" % (cfg.id, cfg.seed))
     runner.recorder.write(d, metrics=res["metrics"])

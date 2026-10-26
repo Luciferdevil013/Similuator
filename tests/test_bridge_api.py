@@ -88,3 +88,42 @@ def test_telemetry_socket_streams_world_then_frames():
         ws2 = await c.ws_connect("/ws/telemetry?session=nope")
         assert (await ws2.receive_json())["type"] == "no_session"
     with_client(t)
+
+
+def test_change_environment_and_vehicle_of_a_running_session():
+    async def t(c):
+        r = await (await c.post("/api/sessions", headers=H, json={
+            "base": "baseline_normal", "fields": {"duration": 60}, "speed": 50})).json()
+        sid = r["session"]["id"]
+
+        async def summary():
+            return (await (await c.get("/api/sessions")).json())["sessions"][0]
+        r = await (await c.post("/api/sessions/%s/command" % sid, headers=H, json={
+            "command": "set_environment", "args": {"environment": "dense_forest", "seed": 5}})).json()
+        assert r["ok"] and r["result"]["environment"] == "dense_forest", r
+        s = await summary()
+        assert s["environment"] == "dense_forest" and s["seed"] == 5
+        bad = await (await c.post("/api/sessions/%s/command" % sid, headers=H, json={
+            "command": "set_environment", "args": {"environment": "moon"}})).json()
+        assert bad["ok"] is False
+        r = await (await c.patch("/api/sessions/" + sid, headers=H, json={
+            "vehicle": "drone", "environment": "flat_open"})).json()
+        assert r["ok"] and r["result"]["vehicle"] == "drone", r
+        for _ in range(100):
+            s = await summary()
+            if s["vehicle"] == "drone" and s["t"] > 1.0:
+                break
+            await asyncio.sleep(0.1)
+        assert s["vehicle"] == "drone" and s["environment"] == "flat_open"
+        assert (await c.patch("/api/sessions/" + sid, json={"vehicle": "drone"})).status == 403
+    with_client(t)
+
+
+def test_selftest_endpoint():
+    async def t(c):
+        assert (await c.post("/api/selftest")).status == 403
+        r = await (await c.post("/api/selftest?only=config", headers=H)).json()
+        assert r["ok"] and r["report"]["ok"] and r["report"]["total"] == 1
+        last = await (await c.get("/api/selftest")).json()
+        assert last["report"]["passed"] == 1
+    with_client(t)

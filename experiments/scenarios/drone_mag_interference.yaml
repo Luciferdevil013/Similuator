@@ -1,0 +1,13 @@
+base: drone_baseline.yaml
+id: drone_mag_interference
+description: >
+  Magnetic interference (power lines / steel) corrupts the compass for 30 s.
+  GNSS velocity and the IMU keep heading observable while moving; the compass
+  updates should be gated rather than trusted.
+faults:
+  - type: MAG_INTERFERENCE
+    target: magnetometer
+    onset: 25.0
+    duration: 30.0
+    params: {field_t: [3.0e-5, 1.5e-5, 0.0]}
+    label: compass interference

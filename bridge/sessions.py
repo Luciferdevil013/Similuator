@@ -20,7 +20,7 @@ import time
 from aiohttp import web
 
 from experiment import scenario_schema as schema
-from experiment.runner import ScenarioConfig, ScenarioRunner
+from experiment.runner import ScenarioConfig, ScenarioRunner, make_runner
 from .snapshot import snapshot, world_static
 
 MAX_SESSIONS = 6
@@ -29,9 +29,13 @@ MAX_SESSIONS = 6
 class SimulationSession:
     def __init__(self, sid: str, raw_cfg: dict, *, label: str = "",
                  speed: float = 1.0, publish_hz: float = 20.0,
-                 include_truth: bool = True, source: str = ""):
+                 include_truth: bool = True, source: str = "",
+                 edit: dict | None = None):
         self.id = sid
         self.raw_cfg = raw_cfg                 # validated scenario dict
+        # The editor payload it came from, so the environment, vehicle or any
+        # field can be changed later and re-validated the same way.
+        self.edit = dict(edit or {"base": raw_cfg.get("id", "baseline_normal")})
         self.label = label or raw_cfg.get("id", sid)
         self.source = source                   # base scenario id it came from
         self.seed: int = int(raw_cfg.get("seed", 12345))
@@ -61,7 +65,7 @@ class SimulationSession:
     def _build(self) -> None:
         cfg = ScenarioConfig.from_dict(self.raw_cfg)
         cfg.seed = int(self.seed)
-        self.runner = ScenarioRunner(cfg)
+        self.runner = make_runner(cfg)
         self.runner._replan(0.0, "initial plan")
         self.static = world_static(self.runner)
         self.latest = snapshot(self.runner, include_truth=self.include_truth)
@@ -162,6 +166,19 @@ class SimulationSession:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self.task
 
+    def reconfigure(self, edit: dict) -> dict:
+        """Swap in a new (validated) scenario and restart on it."""
+        raw = schema.build_config(edit)
+        self.raw_cfg = raw
+        self.edit = dict(edit)
+        self.seed = int(raw.get("seed", self.seed))
+        self.source = str(edit.get("base", self.source))
+        self._reset_requested = True
+        self.paused = False
+        return {"environment": raw.get("environment", "rolling_hills"),
+                "vehicle": schema.vehicle_of(raw), "seed": self.seed,
+                "scenario": raw.get("id")}
+
     # -- subscribers ---------------------------------------------------
     def subscribe(self, ws: web.WebSocketResponse) -> None:
         self._subscribers.add(ws)
@@ -206,6 +223,7 @@ class SimulationSession:
             "scenario": self.raw_cfg.get("id"),
             "source": self.source,
             "environment": self.raw_cfg.get("environment", "rolling_hills"),
+            "vehicle": schema.vehicle_of(self.raw_cfg),
             "seed": self.seed,
             "speed": self.speed,
             "paused": self.paused,
@@ -311,13 +329,38 @@ def _cmd_inject_fault(s: SimulationSession, args: dict) -> dict:
     w = r.terrain
     f = schema.validate_fault(dict(args.get("fault") or {}, onset=0.0),
                               duration=1e9, world_size=(w.size_x, w.size_y),
-                              errors=errors, where="fault")
+                              errors=errors, where="fault",
+                              vehicle=schema.vehicle_of(s.raw_cfg))
     if f is None:
         raise ValueError("; ".join(errors))
     if len(r.injector.specs) + len(s._pending_faults) >= 64:
         raise ValueError("too many faults in this session")
     s._pending_faults.append(f)
     return {"queued": f["type"], "target": f["target"], "at": round(r.clock.t, 2)}
+
+
+def _cmd_set_environment(s: SimulationSession, args: dict) -> dict:
+    """Restart this session on another environment (and optionally seed).
+
+    Everything else about the scenario -- vehicle, faults, mission -- is kept;
+    the change goes through the same validation as the editor.
+    """
+    env = str(args.get("environment", ""))
+    if env not in schema.ENVIRONMENTS:
+        raise ValueError("environment must be one of %s" % ", ".join(schema.ENVIRONMENTS))
+    edit = dict(s.edit, environment=env)
+    fields = dict(edit.get("fields") or {})
+    # The preset owns the terrain fields; drop old overrides of them.
+    for k in list(fields):
+        if k.startswith("world.") and k.split(".", 1)[1] in schema.ENVIRONMENTS[env]["world"]:
+            fields.pop(k)
+    if "seed" in args:
+        fields["seed"] = int(args["seed"])
+    edit["fields"] = fields
+    try:
+        return s.reconfigure(edit)
+    except schema.ScenarioError as exc:
+        raise ValueError("; ".join(exc.errors))
 
 
 #: The complete set of verbs a client may use on a session.
@@ -330,6 +373,7 @@ COMMANDS = {
     "inject_declared_fault": _cmd_inject_declared_fault,
     "list_declared_faults": _cmd_list_declared_faults,
     "inject_fault": _cmd_inject_fault,
+    "set_environment": _cmd_set_environment,
 }
 
 
@@ -353,7 +397,7 @@ class SessionManager:
         self._ids = itertools.count(1)
 
     def create(self, raw_cfg: dict, *, label: str = "", speed: float = 1.0,
-               source: str = "") -> SimulationSession:
+               source: str = "", edit: dict | None = None) -> SimulationSession:
         if len(self.sessions) >= MAX_SESSIONS:
             raise ValueError("at most %d simultaneous sessions; close one first" % MAX_SESSIONS)
         if not 0.05 <= float(speed) <= 50.0:
@@ -361,7 +405,8 @@ class SessionManager:
         sid = "s%d" % next(self._ids)
         s = SimulationSession(sid, raw_cfg, label=label, speed=speed,
                               publish_hz=self.publish_hz,
-                              include_truth=self.include_truth, source=source)
+                              include_truth=self.include_truth, source=source,
+                              edit=edit)
         self.sessions[sid] = s
         s.start()
         return s

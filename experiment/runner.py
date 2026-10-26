@@ -108,6 +108,8 @@ class ScenarioConfig:
 
 
 class ScenarioRunner:
+    vehicle_type = "ugv"
+
     def __init__(self, cfg: ScenarioConfig):
         self.cfg = cfg
         self.rng = RngHub(cfg.seed)
@@ -216,6 +218,10 @@ class ScenarioRunner:
         self._last_odom_speed = 0.0
         self._expected_counts = {sid: 0 for sid in self.sensors}
         self.wall_time = 0.0
+        self._init_gnss_lockout_policy()
+        # Recent IMU samples, for a motion-free check while held.
+        from collections import deque
+        self._imu_window: deque = deque(maxlen=100)
 
     @staticmethod
     def _fault_spec(f: dict, onset: float) -> FaultSpec:
@@ -319,7 +325,8 @@ class ScenarioRunner:
             SensorSpec("gnss", self.sensors["gnss"].rate_hz, timeout_factor=5.0),
             SensorSpec("wheel_odom", self.sensors["wheel_odom"].rate_hz, critical=False),
             SensorSpec("magnetometer", self.sensors["magnetometer"].rate_hz),
-            SensorSpec("barometer", self.sensors["barometer"].rate_hz),
+            SensorSpec("barometer", self.sensors["barometer"].rate_hz,
+                       stale_repeats=25),  # quantised: repeats are normal at constant height
             SensorSpec("battery", self.sensors["battery"].rate_hz, timeout_factor=6.0),
             SensorSpec("lidar", self.sensors["lidar"].rate_hz, timeout_factor=5.0),
         ]
@@ -344,6 +351,8 @@ class ScenarioRunner:
             if self._initialised_ekf:
                 self.ekf.propagate(msg.header.stamp, msg.angular_velocity,
                                    msg.linear_acceleration)
+            self._imu_window.append((float(np.linalg.norm(msg.angular_velocity)),
+                                     float(np.linalg.norm(msg.linear_acceleration))))
 
         # --- GNSS: position + velocity, then the anomaly monitor
         for fix, tw in S["gnss"].poll(t):
@@ -368,8 +377,11 @@ class ScenarioRunner:
                 else:
                     ant = S["gnss"].p.antenna_offset
                     fix_age = max(0.0, t - fix.header.stamp)
+                    self._gnss_lockout_policy(t)
                     ok, nis = self.ekf.update_gnss_position(
                         p_enu, cov.ravel(), antenna_offset=ant, age=fix_age)
+                    if ok:
+                        self._reacquiring = False
                     innov = self.ekf.last["gnss_pos_innov"]
                     cov_diag = self.ekf.last.get("gnss_pos_S_diag")
                     if tw is not None:
@@ -451,7 +463,10 @@ class ScenarioRunner:
                                    np.where(np.isfinite(scan.ranges), scan.ranges, np.inf))
                                    if np.isfinite(scan.ranges).any() else 1.0))
             self.latest_scan = scan
-            if self._initialised_ekf:
+            # Marking the map needs a trustworthy pose: scans placed with a
+            # drifting estimate scatter phantom obstacles that outlive the
+            # fault (seen as a long detour after a GNSS+odometry outage).
+            if self._initialised_ekf and self.ekf.pos_sigma_horizontal() < 3.0:
                 angles = np.linspace(scan.angle_min, scan.angle_max, len(scan.ranges),
                                      endpoint=True)
                 obstacle_ranges = self._segment_ground(scan, angles)
@@ -481,6 +496,50 @@ class ScenarioRunner:
                 if self.health.status_of(sid) is not SensorStatus.OK:
                     self.injector.mark_detected_for_target(
                         sid, t, "sensor_health:" + self.health.health[sid].detail)
+            self._check_innovation_gating(t)
+
+    # -- GNSS gate-lockout policy ---------------------------------------
+    LOCKOUT_SUPPRESS_MAX_S = 20.0
+
+    def _init_gnss_lockout_policy(self) -> None:
+        self._last_fix_t: float | None = None
+        self._reacquiring = False
+        self._suppress_since: float | None = None
+
+    def _gnss_lockout_policy(self, t: float) -> None:
+        """Decide whether the EKF may re-open its GNSS gate this epoch.
+
+        The lockout reset re-acquires GNSS after the FILTER has drifted --
+        typically when fixes return after an outage. Re-opening the gate on a
+        stream that jumped while it was continuously available is how a
+        spoofed position gets accepted. So: allowed after a gap in the fixes;
+        suppressed while the integrity monitor has confirmed an inconsistency
+        in a continuous stream -- but only for a bounded time, because a
+        disagreement that persists that long cannot be told apart from a
+        filter that drifted, and refusing GNSS forever strands the vehicle.
+        """
+        if self._last_fix_t is not None and t - self._last_fix_t > 2.0:
+            self._reacquiring = True
+        self._last_fix_t = t
+        if self.gnss_monitor.state.confirmed and not self._reacquiring:
+            if self._suppress_since is None:
+                self._suppress_since = t
+            allowed = t - self._suppress_since > self.LOCKOUT_SUPPRESS_MAX_S
+        else:
+            self._suppress_since = None
+            allowed = True
+        self.ekf.lockout_enabled = allowed
+
+    def _check_innovation_gating(self, t: float) -> None:
+        """A long run of gate rejections is evidence a stream is wrong.
+
+        The stream still arrives on time with a changing payload, so the
+        health monitor sees nothing; the estimator's own chi-square gate is
+        what notices that it no longer agrees with everything else.
+        """
+        for tag, sid in (("mag", "magnetometer"), ("baro", "barometer")):
+            if self.ekf._consec_reject.get(tag, 0) >= 10:
+                self.injector.mark_detected_for_target(sid, t, "ekf_gate:%s_rejected" % tag)
 
     def _segment_ground(self, scan, angles: np.ndarray) -> np.ndarray:
         """Separate obstacle returns from terrain returns.
@@ -578,6 +637,16 @@ class ScenarioRunner:
 
         self.controller.speed_ceiling = self.resilience.speed_limit
         self.controller.allow_motion = self.resilience.allow_motion
+
+        # Held by the safety manager with no odometry (so no encoder ZUPT):
+        # if the IMU confirms the vehicle is still, say so to the filter.
+        # The vehicle knows it commanded zero speed; the IMU check guards
+        # against sliding. Without this the parked estimate drifted 130 m.
+        if (not self.resilience.allow_motion and len(self._imu_window) >= 80
+                and self.health.status_of("wheel_odom") is not SensorStatus.OK):
+            w = np.asarray(self._imu_window)
+            if w[:, 0].mean() < 0.03 and w[:, 1].std() < 0.08:
+                self.ekf.update_zero_velocity()
 
         angles = ranges = None
         if self.latest_scan is not None:
@@ -759,12 +828,20 @@ class ScenarioRunner:
                 "recorder": self.recorder}
 
 
+def make_runner(cfg: ScenarioConfig) -> ScenarioRunner:
+    """The runner for the scenario's vehicle type (`vehicle: {type: drone}`)."""
+    if str(cfg.vehicle.get("type", "ugv")).lower() == "drone":
+        from experiment.drone_runner import DroneScenarioRunner
+        return DroneScenarioRunner(cfg)
+    return ScenarioRunner(cfg)
+
+
 def run_scenario(path: str | Path, out_dir: str | Path | None = None,
                  *, seed: int | None = None, progress: bool = False) -> dict:
     cfg = ScenarioConfig.load(path)
     if seed is not None:
         cfg.seed = int(seed)
-    runner = ScenarioRunner(cfg)
+    runner = make_runner(cfg)
     res = runner.run(progress=progress)
     if out_dir is not None:
         d = Path(out_dir) / ("%s_seed%d" % (cfg.id, cfg.seed))

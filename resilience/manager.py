@@ -141,8 +141,13 @@ class ResilienceManager:
         # --- gather evidence (all from the vehicle's own view of itself)
         critical_down = [s for s in c.critical_sensors
                          if health_monitor.status_of(s) is not SensorStatus.OK]
-        fallback_down = [s for s in c.fallback_sensors
-                         if health_monitor.status_of(s) is not SensorStatus.OK]
+        fallback_now = [s for s in c.fallback_sensors
+                        if health_monitor.status_of(s) is not SensorStatus.OK]
+        # A fallback sensor must be down for a moment before it counts: a
+        # one-sample health blip (e.g. a quantised reading repeating) used to
+        # send the vehicle straight to SAFE_ACTION.
+        fallback_down = (fallback_now if self._hold("fb", bool(fallback_now), dt, c.degraded_dwell)
+                         else [])
         perception_down = [s for s in c.perception_sensors
                            if s in health_monitor.specs
                            and health_monitor.status_of(s) is not SensorStatus.OK]

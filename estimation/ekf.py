@@ -185,6 +185,11 @@ class ErrorStateEkf:
         self.t = 0.0
         self.omega_body = np.zeros(3)
         self._consec_reject: dict[str, int] = {}
+        # Cleared by the runner while the GNSS integrity monitor has
+        # confirmed an inconsistency: the lockout reset exists to re-acquire
+        # after the FILTER diverged, and re-opening the gate on a stream the
+        # monitor distrusts is exactly how a spoofed position gets accepted.
+        self.lockout_enabled = True
         self.last_accel_enu = np.zeros(3)
         self.last_gyro_raw = np.zeros(3)
         self.initialised = False
@@ -341,7 +346,7 @@ class ErrorStateEkf:
             # slipping or sliding, which is information, not divergence --
             # inflating the covariance for it would just loosen the filter
             # every time the ground got loose.
-            if (tag in self.cfg.lockout_tags
+            if (tag in self.cfg.lockout_tags and self.lockout_enabled
                     and n >= self.cfg.reject_lockout_count):
                 self.P[:6, :6] *= self.cfg.reject_lockout_inflation
                 self._symmetrise()
@@ -466,6 +471,15 @@ class ErrorStateEkf:
         ok, nis = self._update(innov, H, np.array([[s ** 2]]),
                                self.cfg.scalar_gate, "baro")
         self.last["baro_innov"] = float(innov[0])
+        return ok, nis
+
+    def update_altitude(self, alt_meas: float, sigma: float, tag: str = "alt"):
+        """Absolute altitude (no bias state), e.g. terrain map + rangefinder."""
+        innov = np.array([float(alt_meas) - self.p[2]])
+        H = np.zeros((1, NX))
+        H[0, 2] = 1.0
+        ok, nis = self._update(innov, H, np.array([[sigma ** 2]]), self.cfg.scalar_gate, tag)
+        self.last["%s_innov" % tag] = float(innov[0])
         return ok, nis
 
     def update_wheel_odometry(self, speed_body_x: float, *,

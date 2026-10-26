@@ -1,0 +1,12 @@
+base: drone_baseline.yaml
+id: drone_gnss_glitch
+description: >
+  A short GNSS dropout (5 s) during cruise. The drone should ride through it
+  in LIMITED_OPERATION within its dead-reckoning budget, recover and finish
+  the mission.
+faults:
+  - type: GNSS_OUTAGE
+    target: gnss
+    onset: 25.0
+    duration: 5.0
+    label: brief loss of fix

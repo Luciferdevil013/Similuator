@@ -84,14 +84,17 @@ ENVIRONMENTS: dict[str, dict] = {
 # ----------------------------------------------------------------------
 # editable scalar fields: dotted path -> spec
 # ----------------------------------------------------------------------
-def _f(lo, hi, label, unit="", step=None, group="General"):
+VEHICLES = ("ugv", "drone")
+
+
+def _f(lo, hi, label, unit="", step=None, group="General", vehicles=VEHICLES):
     return {"type": "float", "min": lo, "max": hi, "label": label,
-            "unit": unit, "step": step, "group": group}
+            "unit": unit, "step": step, "group": group, "vehicles": list(vehicles)}
 
 
-def _i(lo, hi, label, unit="", group="General"):
+def _i(lo, hi, label, unit="", group="General", vehicles=VEHICLES):
     return {"type": "int", "min": lo, "max": hi, "label": label,
-            "unit": unit, "step": 1, "group": group}
+            "unit": unit, "step": 1, "group": group, "vehicles": list(vehicles)}
 
 
 FIELDS: dict[str, dict] = {
@@ -106,6 +109,14 @@ FIELDS: dict[str, dict] = {
     "world.max_slope_deg": _f(10, 35, "Max traversable slope", "deg", 1, "Environment"),
     "world.n_obstacles": _i(0, 200, "Obstacle count", group="Environment"),
     "world.keep_clear": _f(3, 20, "Clear radius at start/goal", "m", 0.5, "Environment"),
+    "world.wind_speed": _f(0, 20, "Mean wind speed", "m/s", 0.5, "Environment", ("drone",)),
+    "world.wind_dir_deg": _f(0, 360, "Wind from (compass)", "deg", 5, "Environment", ("drone",)),
+    "world.turbulence": _f(0, 5, "Turbulence (rms gust)", "m/s", 0.1, "Environment", ("drone",)),
+
+    "vehicle.cruise_agl": _f(5, 60, "Cruise height above terrain", "m", 1, "Flight", ("drone",)),
+    "vehicle.cruise_speed": _f(1, 15, "Cruise speed", "m/s", 0.5, "Flight", ("drone",)),
+    "vehicle.max_tilt_deg": _f(10, 45, "Max tilt", "deg", 1, "Flight", ("drone",)),
+    "vehicle.climb_rate": _f(0.5, 6, "Climb rate", "m/s", 0.1, "Flight", ("drone",)),
 
     "mission.goal_tolerance": _f(1, 10, "Goal tolerance", "m", 0.5, "Mission"),
     "mission.timeout_s": _f(60, 1200, "Mission timeout", "s", 10, "Mission"),
@@ -121,12 +132,22 @@ FIELDS: dict[str, dict] = {
 
     "sensors.imu.rate_hz": _f(50, 400, "IMU rate", "Hz", 10, "Sensors"),
     "sensors.gnss.rate_hz": _f(1, 20, "GNSS rate", "Hz", 1, "Sensors"),
-    "sensors.wheel_odom.rate_hz": _f(10, 100, "Wheel odometry rate", "Hz", 5, "Sensors"),
-    "sensors.lidar.rate_hz": _f(2, 20, "LiDAR rate", "Hz", 1, "Sensors"),
+    "sensors.wheel_odom.rate_hz": _f(10, 100, "Wheel odometry rate", "Hz", 5, "Sensors", ("ugv",)),
+    "sensors.lidar.rate_hz": _f(2, 20, "LiDAR rate", "Hz", 1, "Sensors", ("ugv",)),
+    "sensors.rangefinder.rate_hz": _f(5, 50, "Rangefinder rate", "Hz", 1, "Sensors", ("drone",)),
     "sensors.magnetometer.rate_hz": _f(5, 100, "Magnetometer rate", "Hz", 5, "Sensors"),
 }
 
 SENSORS = ("imu", "gnss", "wheel_odom", "magnetometer", "barometer", "battery", "lidar")
+VEHICLE_SENSORS = {
+    "ugv": SENSORS,
+    "drone": ("imu", "gnss", "magnetometer", "barometer", "battery", "rangefinder"),
+}
+#: The `vehicle:` block a scenario gets when an edit switches vehicle type.
+VEHICLE_DEFAULTS = {
+    "ugv": {"type": "ugv", "robot_radius": 0.45, "params": {}},
+    "drone": {"type": "drone", "cruise_agl": 20.0, "cruise_speed": 8.0, "params": {}},
+}
 
 
 # ----------------------------------------------------------------------
@@ -151,6 +172,7 @@ FAULTS: dict[str, dict] = {
     "GNSS_OUTAGE": {
         "targets": ["gnss"], "params": {},
         "description": "Receiver stops producing fixes.",
+        "vehicles": ["ugv", "drone"],
     },
     "GNSS_INCONSISTENCY": {
         "targets": ["gnss"],
@@ -170,15 +192,18 @@ FAULTS: dict[str, dict] = {
         "targets": ["lidar"],
         "params": {"drop_prob": _num(0, 1, "Drop probability", "", 1.0)},
         "description": "Scans stop (1.0) or are dropped at random.",
+        "vehicles": ["ugv"],
     },
     "STALE_MESSAGES": {
-        "targets": ["gnss", "imu", "wheel_odom", "lidar", "magnetometer", "barometer"],
+        "targets": ["gnss", "imu", "wheel_odom", "lidar", "magnetometer", "barometer",
+                    "rangefinder"],
         "params": {"freeze_stamp": _bool("Freeze timestamps"),
                    "extra_delay": _num(0, 10, "Extra delay", "s", 0.0)},
         "description": "Stream repeats an old payload and/or arrives late.",
     },
     "COMMUNICATION_LOSS": {
-        "targets": ["wheel_odom", "gnss", "imu", "lidar", "magnetometer", "barometer"],
+        "targets": ["wheel_odom", "gnss", "imu", "lidar", "magnetometer", "barometer",
+                    "rangefinder"],
         "params": {"total": _bool("Total loss", True),
                    "drop_prob": _num(0, 1, "Drop probability", "", 0.0),
                    "extra_delay": _num(0, 10, "Extra delay", "s", 0.0)},
@@ -196,6 +221,7 @@ FAULTS: dict[str, dict] = {
         "targets": ["wheel_odom"],
         "params": {"excess": _num(-0.9, 2, "Excess speed fraction", "", 0.25)},
         "description": "Encoders over/under-report speed.",
+        "vehicles": ["ugv"],
     },
     "BARO_DRIFT": {
         "targets": ["barometer"],
@@ -208,7 +234,16 @@ FAULTS: dict[str, dict] = {
         "defaults": {"field_t": [2.0e-5, 0.0, 0.0]},
         "description": "Local magnetic disturbance corrupts heading.",
     },
+    "WIND_GUST": {
+        "targets": ["world"],
+        "params": {"velocity": _vec(-25, 25, "Gust velocity (E,N,U)", "m/s")},
+        "defaults": {"velocity": [9.0, 0.0, 0.0]},
+        "description": "A sustained gust pushes the airframe (drone only).",
+        "vehicles": ["drone"],
+    },
 }
+for _spec in FAULTS.values():
+    _spec.setdefault("vehicles", list(VEHICLES))
 assert set(FAULTS) == {f.name for f in FaultType if f is not FaultType.NONE}
 
 
@@ -268,6 +303,7 @@ def list_scenarios() -> list[dict]:
                 "id": p.stem, "source": source,
                 "description": str(raw.get("description", "")).strip(),
                 "environment": raw.get("environment", "rolling_hills"),
+                "vehicle": vehicle_of(raw),
                 "seed": raw.get("seed"),
                 "faults": [{"type": f.get("type"), "target": f.get("target"),
                             "onset": f.get("onset"), "duration": f.get("duration")}
@@ -298,6 +334,11 @@ def _set(d: dict, dotted: str, value) -> None:
             cur[part] = nxt
         cur = nxt
     cur[parts[-1]] = value
+
+
+def vehicle_of(raw: dict) -> str:
+    v = str((raw.get("vehicle") or {}).get("type", "ugv")).lower()
+    return v if v in VEHICLES else "ugv"
 
 
 def _num_ok(v, spec, name, errors) -> float | int | None:
@@ -338,7 +379,8 @@ def _check_param(v, spec, name, errors):
 
 
 def validate_fault(f: dict, duration: float, world_size: tuple[float, float],
-                   errors: list[str], where: str = "fault") -> dict | None:
+                   errors: list[str], where: str = "fault",
+                   vehicle: str = "ugv") -> dict | None:
     if not isinstance(f, dict):
         errors.append("%s must be an object" % where)
         return None
@@ -347,10 +389,15 @@ def validate_fault(f: dict, duration: float, world_size: tuple[float, float],
     if spec is None:
         errors.append("%s: unknown type %r" % (where, f.get("type")))
         return None
-    target = f.get("target") or spec["targets"][0]
-    if target not in spec["targets"]:
-        errors.append("%s: target %r not allowed for %s (allowed: %s)"
-                      % (where, target, ftype, ", ".join(spec["targets"])))
+    if vehicle not in spec["vehicles"]:
+        errors.append("%s: %s does not apply to a %s" % (where, ftype, vehicle))
+        return None
+    have = set(VEHICLE_SENSORS.get(vehicle, SENSORS)) | {"world"}
+    targets = [x for x in spec["targets"] if x in have]
+    target = f.get("target") or targets[0]
+    if target not in targets:
+        errors.append("%s: target %r not allowed for %s on a %s (allowed: %s)"
+                      % (where, target, ftype, vehicle, ", ".join(targets)))
     n = len(errors)
     onset = _num_ok(f.get("onset", 0.0), {"type": "float", "min": 0, "max": duration},
                     where + ".onset", errors)
@@ -403,6 +450,19 @@ def build_config(edit: dict) -> dict:
     raw = load_raw(bp)
     raw.pop("environment", None)
 
+    vtype = edit.get("vehicle")
+    if vtype is not None:
+        if vtype not in VEHICLES:
+            errors.append("vehicle must be one of %s" % ", ".join(VEHICLES))
+        elif vtype != vehicle_of(raw):
+            raw["vehicle"] = copy.deepcopy(VEHICLE_DEFAULTS[vtype])
+            raw.pop("resilience", None)          # the rover's speeds don't fit a drone
+            if "faults" not in edit:
+                raw["faults"] = [f for f in raw.get("faults", []) or []
+                                 if vtype in FAULTS.get(str(f.get("type", "")).upper(),
+                                                        {}).get("vehicles", [])]
+    vehicle = vehicle_of(raw)
+
     env = edit.get("environment")
     if env:
         if env not in ENVIRONMENTS:
@@ -429,6 +489,8 @@ def build_config(edit: dict) -> dict:
         if spec is None:
             errors.append("field %r cannot be edited" % key)
             continue
+        if vehicle not in spec["vehicles"]:
+            continue                             # not meaningful for this vehicle
         v = _num_ok(value, spec, key, errors)
         if v is not None:
             _set(raw, key, v)
@@ -458,7 +520,7 @@ def build_config(edit: dict) -> dict:
         m["timeout_s"] = float(raw["duration"])
 
     r = raw.get("resilience", {})
-    if r:
+    if r and vehicle == "ugv":
         sn = r.get("speed_normal", 1.8)
         if r.get("speed_degraded", 0.9) > sn or r.get("speed_limited", 0.55) > sn:
             errors.append("degraded/limited speeds must not exceed the NORMAL speed")
@@ -474,7 +536,7 @@ def build_config(edit: dict) -> dict:
             fl = fl[:MAX_FAULTS]
         out = []
         for i, f in enumerate(fl):
-            v = validate_fault(f, duration, size, errors, "faults[%d]" % i)
+            v = validate_fault(f, duration, size, errors, "faults[%d]" % i, vehicle)
             if v is not None:
                 out.append(v)
         raw["faults"] = out
@@ -516,6 +578,8 @@ def describe() -> dict:
         "fields": FIELDS,
         "faults": FAULTS,
         "sensors": list(SENSORS),
+        "vehicle_sensors": {k: list(v) for k, v in VEHICLE_SENSORS.items()},
+        "vehicles": list(VEHICLES),
         "max_faults": MAX_FAULTS,
     }
 
@@ -533,21 +597,40 @@ _RUNNER_DEFAULTS = {
 }
 
 
-def _defaults() -> dict:
+def _defaults(vehicle: str = "ugv") -> dict:
     from resilience.manager import ResilienceConfig
     d = dict(_RUNNER_DEFAULTS)
     rc = ResilienceConfig()
     for k in FIELDS:
         if k.startswith("resilience."):
             d[k] = getattr(rc, k.split(".", 1)[1])
+    if vehicle == "drone":
+        from experiment.drone_runner import DRONE_RESILIENCE
+        from nav.drone_controller import DroneControllerConfig
+        for k, v in DRONE_RESILIENCE.items():
+            if "resilience." + k in FIELDS:
+                d["resilience." + k] = v
+        dc = DroneControllerConfig()
+        for k in ("cruise_agl", "cruise_speed", "max_tilt_deg", "climb_rate"):
+            d["vehicle." + k] = getattr(dc, k)
+        d.update({"world.wind_speed": 0.0, "world.wind_dir_deg": 0.0,
+                  "world.turbulence": 0.6, "sensors.imu.rate_hz": 250.0,
+                  "sensors.rangefinder.rate_hz": 20.0, "duration": 240.0,
+                  "mission.timeout_s": 240.0})
     return d
 
 
 def current_values(raw: dict) -> dict:
-    """The editable fields' values in a resolved config, for pre-filling the form."""
-    dflt = _defaults()
+    """The editable fields' values in a resolved config, for pre-filling the form.
+
+    Only fields that apply to the scenario's vehicle are returned.
+    """
+    vehicle = vehicle_of(raw)
+    dflt = _defaults(vehicle)
     out = {}
-    for k in FIELDS:
+    for k, spec in FIELDS.items():
+        if vehicle not in spec["vehicles"]:
+            continue
         v = _get(raw, k)
         out[k] = dflt.get(k) if v is None else v
     return out

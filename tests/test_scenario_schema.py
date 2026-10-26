@@ -87,5 +87,22 @@ def test_base_inheritance(tmp_path, monkeypatch):
 
 def test_current_values_fill_defaults():
     v = S.current_values(S.load_raw(S.scenario_path("baseline_normal")))
-    assert set(v) == set(S.FIELDS)
+    assert set(v) == {k for k, f in S.FIELDS.items() if "ugv" in f["vehicles"]}
     assert v["resilience.speed_normal"] == 1.8 and v["seed"] == 12345
+    d = S.current_values(S.load_raw(S.scenario_path("drone_baseline")))
+    assert "vehicle.cruise_agl" in d and "sensors.lidar.rate_hz" not in d
+    assert d["resilience.speed_normal"] == 8.0
+
+
+def test_vehicle_switch_and_vehicle_specific_faults():
+    raw = S.build_config({"base": "gnss_outage", "vehicle": "drone"})
+    assert S.vehicle_of(raw) == "drone"
+    assert all(f["type"] != "LIDAR_DROPOUT" for f in raw["faults"])
+    with pytest.raises(S.ScenarioError) as exc:
+        S.build_config({"base": "drone_baseline", "faults": [{"type": "LIDAR_DROPOUT"}]})
+    assert "does not apply" in exc.value.errors[0]
+    with pytest.raises(S.ScenarioError):
+        S.build_config({"base": "baseline_normal", "faults": [{"type": "WIND_GUST"}]})
+    with pytest.raises(S.ScenarioError):        # rover has no rangefinder
+        S.build_config({"base": "baseline_normal",
+                        "faults": [{"type": "STALE_MESSAGES", "target": "rangefinder"}]})

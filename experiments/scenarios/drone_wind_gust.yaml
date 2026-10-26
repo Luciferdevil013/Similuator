@@ -1,0 +1,14 @@
+base: drone_baseline.yaml
+id: drone_wind_gust
+description: >
+  A strong crosswind gust (17 m/s) during cruise. Tests that the position
+  controller leans into it, that tilt saturation is flagged as an unrejected
+  disturbance, and that the drone still arrives without hitting terrain.
+faults:
+  - type: WIND_GUST
+    target: world
+    onset: 25.0
+    duration: 15.0
+    ramp: 3.0
+    params: {velocity: [12.0, -12.0, 0.0]}
+    label: crosswind gust
