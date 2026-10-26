@@ -1,0 +1,4 @@
+kind,t,detail
+fault_onset,80.0,LIDAR_DROPOUT on lidar
+fault_detected,80.5,LIDAR_DROPOUT by sensor_health:no message for >0.50 s (latency 0.50s)
+plan,0.0,"initial plan: ok, 285.2 m"

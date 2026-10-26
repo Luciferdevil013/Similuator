@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Stat, num } from "../components/Panels";
 import type { HistoryRow } from "../useTelemetry";
 import type { ResultsMessage, Telemetry, WorldMessage } from "../types";
@@ -87,6 +87,26 @@ export function ReplayExport({
   const pausePlayback = () => window.clearInterval(timerRef.current);
 
   const faults = world?.faults_declared ?? [];
+
+  // Ask the bridge which scenarios it will load, once the console is
+  // authorised. The list is the server's, not a hard-coded copy here.
+  useEffect(() => {
+    if (commandReady) sendCommand("list_scenarios");
+  }, [commandReady, sendCommand]);
+
+  const scenarios = useMemo(() => {
+    for (const line of commandLog) {
+      const m = line.match(/^list_scenarios: (.+)$/);
+      if (!m) continue;
+      try {
+        const parsed = JSON.parse(m[1]) as { scenarios?: string[] };
+        if (parsed.scenarios) return parsed.scenarios;
+      } catch {
+        /* a malformed log line is not worth failing the panel for */
+      }
+    }
+    return [];
+  }, [commandLog]);
 
   return (
     <div className="grid">
@@ -237,6 +257,37 @@ export function ReplayExport({
             reset
           </button>
         </div>
+        {scenarios.length > 0 && (
+          <div className="btn-row">
+            <select
+              className="token"
+              disabled={!commandReady}
+              value={
+                world ? scenarios.find((n) => n.startsWith(world.scenario.id)) ?? "" : ""
+              }
+              onChange={(e) =>
+                sendCommand("load_scenario", { name: e.target.value })
+              }
+            >
+              {scenarios.map((n) => (
+                <option key={n} value={n}>
+                  {n.replace(/\.yaml$/, "").replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={!commandReady}
+              onClick={() =>
+                sendCommand("reset", {
+                  seed: Math.floor(Math.random() * 100000),
+                })
+              }
+              title="Re-run the same scenario with a different random seed."
+            >
+              new seed
+            </button>
+          </div>
+        )}
         <div className="btn-row">
           <label className="muted small">
             pacing ×{speed}

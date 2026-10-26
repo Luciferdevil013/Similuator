@@ -1,147 +1,122 @@
 # ResilienceLab
 
-Software-in-the-loop testbed for **autonomous ground-vehicle navigation under sensor faults**.
-A simulated rover drives across rough terrain to a goal while faults are injected into its
-sensors (GNSS outage, GNSS spoof-like offset, LiDAR dropout, IMU bias, stale data, lost
-odometry link, surprise obstacle). The rover has to detect each fault, switch to a safe
-operating mode, and recover. Every run is scored against simulator ground truth.
+Software-in-the-loop testbed for autonomous navigation under sensor faults:
+a physically-modelled rover, ten simulated sensor streams, an error-state
+Kalman filter, a fault injector, a resilience state machine, and an operator
+dashboard.
 
-> **Scope note.** This prototype is pure Python, with no Gazebo, ROS 2 or PX4 install. The
-> simulator, sensor models and navigation stack are written from scratch so they run anywhere.
-> The structure follows the project report (sensor messages modelled on the ROS types, a
-> recorder that is the only component allowed to see ground truth). The PX4 drone is **not**
-> implemented yet. All results are simulated, not real-world validation.
+## Run it
 
----
-
-## Quick start (demo)
-
-**Needs:** Python 3.10+ (and Node.js 18+ only if you change the dashboard; a built copy is included).
-
-### macOS / Linux (one command)
+Two commands. The first builds the dashboard (once); the second starts
+everything, because the bridge serves the built dashboard itself.
 
 ```bash
-./run_demo.sh                 # GNSS-outage scenario at 3x speed
+cd dashboard && npm install && npm run build
 ```
-
-Then open **http://127.0.0.1:8787/?token=demo** in a browser.
-
-Other scenarios and speeds:
 
 ```bash
-./run_demo.sh lidar_dropout
-./run_demo.sh comms_loss
-SPEED=1 ./run_demo.sh baseline_normal     # real time
+python3 -m bridge.telemetry_server --start-paused
 ```
 
-### Manual / Windows
+Then open **http://127.0.0.1:8787/** and press **▶ Start simulation**.
+
+Without `--start-paused` the run begins immediately; the header controls work
+either way.
+
+### Controls
+
+The transport bar sits in the header on every screen:
+
+| control | what it does |
+| --- | --- |
+| ▶ Start / ⏸ Pause / ▶ Resume / ↻ Run again | run state; `Space` also toggles it |
+| ⏭ 1 s | advance one second of simulated time while paused |
+| ↺ Restart | rebuild the scenario and wait at the start |
+| scenario picker | load any scenario in `experiments/scenarios/` |
+| ×N | wall-clock pacing, 1–40× |
+
+Keys `1`–`6` switch screens: Mission, Map, 3D view, Sensors, Results,
+Replay / export.
+
+### Options
+
+```
+--scenario PATH     scenario file (default: baseline_normal.yaml)
+--seed N            override the scenario seed
+--speed N           wall-clock pacing multiplier
+--start-paused      wait for Start instead of running immediately
+--port N            default 8787
+--bind ADDR         default 127.0.0.1
+--no-truth          omit ground truth from the stream
+--no-auto-token     never hand the page the command token; type it instead
+```
+
+## Run experiments headlessly
+
+The dashboard is for watching; the recorder is the authoritative record.
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-python3 -m bridge.telemetry_server --scenario experiments/scenarios/gnss_outage.yaml --speed 3 --token demo
+python3 -c "from experiment.runner import run_scenario; print(run_scenario('experiments/scenarios/baseline_normal.yaml','runs')['metrics']['outcome'])"
 ```
 
-Open **http://127.0.0.1:8787/?token=demo**.
+Each trial writes `result.json`, `metrics.json`, `timeseries.csv` and
+`events.csv` under `runs/<scenario>_seed<N>/`. Seeds are fixed per trial, so a
+run reproduces exactly.
 
-`?token=demo` unlocks the command console (pause / resume / reset / inject fault). Without
-it, the dashboard is read-only. The bridge listens on localhost only.
+## How the browser is kept at arm's length
 
-### Rebuilding the dashboard (only after editing `dashboard/src`)
+Three separate properties, because the dashboard is the least trusted part of
+the system:
 
-```bash
-cd dashboard
-npm install          # installs packages for YOUR platform
-npm run build        # writes dashboard/dist, which the bridge serves
-```
+* **Telemetry is broadcast-only.** Anything a client sends on
+  `/ws/telemetry` is discarded, so the socket used for reading cannot write.
+* **Commands are an allowlist, not a passthrough.** `/ws/command` accepts
+  only the verbs in `COMMANDS`, each with a bounded signature. The protocol
+  cannot express a topic, a node, a file path or a Python attribute, so
+  "publish to an arbitrary topic" is not a reachable state. `load_scenario`
+  matches a bare filename against the scenarios directory listing rather than
+  joining a path onto it, so `../../etc/passwd` simply fails to match.
+* **The token is a convenience boundary, not an authentication system.** On
+  loopback the bridge hands it to the page that it served, via `/session`,
+  which carries no CORS headers — another origin may issue the request but
+  the browser will not let its JavaScript read the reply. Bound anywhere
+  else, or with `--no-auto-token`, `/session` returns 403 and the token must
+  be entered by hand.
 
-For live-reload development, run `npm run dev` and open http://localhost:5173 (it proxies to
-the bridge on port 8787, so keep the bridge running).
+## Fault injection is arithmetic, not interference
 
----
+Every fault in this platform is a modification applied to a simulated sensor
+stream inside this one process: a dropout, a bias, an offset, a frozen
+payload, added noise. Nothing is transmitted, no radio is touched, and no
+operating-system or network state is changed. The platform cannot interfere
+with real GNSS or any real device, by construction.
 
-## What to show (suggested 3-minute demo)
+## Ground truth is for scoring only
 
-1. **Start** `./run_demo.sh` (GNSS outage). On the **Mission** tab the rover is `NORMAL`, true
-   error is under 1 m and the reported σ follows it.
-2. **3D view.** Terrain, obstacles, planned path, estimated pose (blue) and ground truth (orange,
-   shown for display only; the navigation stack never reads it).
-3. **t = 90 s: GNSS lost.** Within about 1 s the state goes `DEGRADED` → `LIMITED_OPERATION`:
-   the rover slows to 0.55 m/s and dead-reckons on IMU + wheel odometry.
-4. **About 75 s later** the dead-reckoning budget runs out → `SAFE_ACTION` (stop and hold), because
-   inertial navigation drifts and can't be trusted indefinitely.
-5. **t = 190 s: GNSS back** → `RECOVERY` (validated for 6 s) → `NORMAL` → the rover reaches the goal.
-6. **Sensors tab:** sensor health table, estimator residuals, learned sensor biases.
-7. **Results tab:** when the run ends it shows RMSE, detection latency, recovery time and false alarms.
-8. **Replay / export:** scrub back through the run, export CSV/JSON, or use the console to `reset`
-   or trigger the declared fault again.
+The true pose is recorded, published to the dashboard and used to compute
+every accuracy metric. It is never read by the estimator, the planner or the
+controller. It travels under its own key in the telemetry frame so that an
+accidental dependency on it would be obvious in review.
 
-Other good scenarios: `lidar_dropout` (stops when it goes blind, resumes when the scanner
-returns) and `comms_loss` (odometry *and* GNSS lost: no valid fallback, so it stops at once).
+## Anomaly reporting is evidence-based
 
----
+The GNSS monitor reports that the satellite solution is **inconsistent** with
+the inertial and odometric evidence. It does not report spoofing. Jamming,
+multipath, a receiver fault, an ephemeris error and a fault in the estimator
+itself all present the same way to this test, so no cause is claimed —
+the dashboard says "inconsistent", lists the tests that fired, and leaves
+attribution to the operator.
 
-## Batch experiments and metrics
-
-```bash
-python3 -m experiment.batch                               # all scenarios x seeds 12345 2 7
-python3 -m experiment.batch gnss_outage --seeds 1 2 3 4 5
-```
-
-Each trial writes `runs/<scenario>_seed<seed>/` (`metrics.json`, `events.csv`, and the large
-`result.json` + `timeseries.csv`, which are git-ignored). The batch also writes
-**`runs/summary.md`** and `runs/summary.csv`.
-
-Metrics (see `experiment/metrics.py`): position RMSE / p95 / max, estimator consistency
-(error ÷ σ), detection rate and latency, false alarms per hour on fault-free epochs, recovery
-time, path efficiency, per-sensor data availability, and mission outcome. *Success* requires
-reaching the goal with zero collisions. A safe stop short of the goal is reported separately
-and is never counted as a success.
-
----
-
-## Architecture
+## Layout
 
 ```
-sim/            world, terrain, UGV dynamics, sensor models (IMU, GNSS, LiDAR, wheel odom,
-                magnetometer, barometer, battery, camera), simulation clock
-faults/         fault injector: dropout, delay/stale, bias, offset, comms loss, new obstacle
-estimation/     error-state EKF (IMU + GNSS + odometry + mag + baro), GNSS integrity monitor
-                (NIS + CUSUM), sensor-health monitor (rate, timeout, stale payload, range)
-nav/            costmap with LiDAR ground segmentation, terrain-aware A*, pure-pursuit controller
-resilience/     explicit safety state machine:
-                NORMAL → DEGRADED → LIMITED_OPERATION → SAFE_ACTION → RECOVERY
-experiment/     scenario runner (closes the loop), recorder (only consumer of ground truth),
-                metrics, batch runner
-bridge/         aiohttp WebSocket bridge: read-only telemetry + token-gated allow-listed commands
-dashboard/      React + TypeScript + Three.js operator UI (served by the bridge from dashboard/dist)
-experiments/    scenario definitions (YAML)
-runs/           experiment outputs
+sim/          world, terrain, vehicle dynamics, ten sensor models
+estimation/   error-state Kalman filter, GNSS integrity monitor, sensor health
+nav/          layered costmap, terrain-aware A*, pure-pursuit controller
+faults/       fault injector and scenario fault specs
+resilience/   mission state machine
+experiment/   scenario runner, recorder, metrics
+bridge/       WebSocket telemetry bridge and snapshot assembly
+dashboard/    React + TypeScript + Three.js operator dashboard
+experiments/  scenario definitions
 ```
-
-Data flow: `simulator → sensor messages → EKF / monitors → resilience FSM → planner/controller
-→ vehicle commands → simulator`, with `recorder ← ground truth` for scoring only, and
-`bridge → WebSocket → dashboard` for display.
-
-### Safety state machine
-
-| State | Meaning | Leaves when |
-|---|---|---|
-| NORMAL | sensors and estimate OK | confirmed fault or σ > 1.8 m → DEGRADED; IMU or LiDAR lost → SAFE_ACTION |
-| DEGRADED | fault present, assessing fallback | fallback (IMU + odometry) healthy → LIMITED_OPERATION; no fallback / σ > 7 m → SAFE_ACTION |
-| LIMITED_OPERATION | slow (0.55 m/s), dead-reckoning budget of 75 s / 60 m | budget spent or inputs lost → SAFE_ACTION; fault clears → RECOVERY |
-| SAFE_ACTION | stop and hold | inputs restored and validated → RECOVERY |
-| RECOVERY | restored inputs on probation | 6 s clean → NORMAL; regression → SAFE_ACTION |
-
----
-
-## Known limitations / next steps
-
-- No real Gazebo / ROS 2 / PX4 integration yet; the drone pipeline is not started.
-- A slowly ramped GNSS offset (`gnss_inconsistency`) is detected late: the filter partly
-  follows the offset before the monitor confirms it.
-- During long dead-reckoning the reported σ underestimates the true error. The DR budget, not
-  σ, is what makes the rover stop.
-- No automated test suite yet.

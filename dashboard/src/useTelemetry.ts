@@ -27,6 +27,12 @@ export interface HistoryRow {
 
 const HISTORY_LIMIT = 6000; // 5 minutes at 20 Hz
 
+function httpUrl(path: string): string {
+  const base = import.meta.env.VITE_BRIDGE_URL as string | undefined;
+  if (base) return base.replace(/^ws/, "http").replace(/\/$/, "") + path;
+  return path;
+}
+
 function wsUrl(path: string): string {
   const base = import.meta.env.VITE_BRIDGE_URL as string | undefined;
   if (base) return base.replace(/\/$/, "") + path;
@@ -65,6 +71,8 @@ export interface TelemetryState {
   commandLog: string[];
   setToken: (t: string) => void;
   token: string;
+  /** true when the bridge handed us the token; false when it must be typed. */
+  tokenAuto: boolean | null;
 }
 
 export function useTelemetry(): TelemetryState {
@@ -77,6 +85,7 @@ export function useTelemetry(): TelemetryState {
   const [commandReady, setCommandReady] = useState(false);
   const [commandLog, setCommandLog] = useState<string[]>([]);
   const [token, setToken] = useState<string>(initialToken);
+  const [tokenAuto, setTokenAuto] = useState<boolean | null>(null);
 
   // History lives in a ref: it is appended at 20 Hz and only the screens that
   // draw it need to re-render, so it must not drive React state on every frame.
@@ -197,6 +206,28 @@ export function useTelemetry(): TelemetryState {
     []
   );
 
+  // Ask the bridge that served this page for the command token. On loopback
+  // it answers, so the operator never has to copy a secret out of a terminal
+  // just to press Play on their own simulator. Off loopback it refuses and
+  // the token has to be typed -- which is the point at which typing it
+  // actually means something.
+  useEffect(() => {
+    let gone = false;
+    fetch(httpUrl("/session"))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((j: { token?: string | null }) => {
+        if (gone || !j.token) return;
+        setToken(j.token);
+        setTokenAuto(true);
+      })
+      .catch(() => {
+        if (!gone) setTokenAuto(false);
+      });
+    return () => {
+      gone = true;
+    };
+  }, []);
+
   const persistToken = useCallback((t: string) => {
     try {
       localStorage.setItem("rl.token", t);
@@ -226,5 +257,6 @@ export function useTelemetry(): TelemetryState {
     commandLog,
     setToken: persistToken,
     token,
+    tokenAuto,
   };
 }

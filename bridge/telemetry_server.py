@@ -47,6 +47,19 @@ from experiment.runner import ScenarioConfig, ScenarioRunner
 from .snapshot import snapshot, world_static
 
 ROOT = Path(__file__).resolve().parent.parent
+SCENARIO_DIR = ROOT / "experiments" / "scenarios"
+
+
+def _allowed_scenarios() -> list[Path]:
+    """Scenario files a client may ask for, by name only.
+
+    Fragments beginning with an underscore (the shared world definition) are
+    not scenarios and are excluded.
+    """
+    if not SCENARIO_DIR.is_dir():
+        return []
+    return sorted(p for p in SCENARIO_DIR.glob("*.yaml")
+                  if not p.name.startswith("_"))
 
 
 # ----------------------------------------------------------------------
@@ -62,13 +75,16 @@ class SimulationHost:
 
     def __init__(self, scenario: str | Path, *, seed: int | None = None,
                  speed: float = 1.0, publish_hz: float = 20.0,
-                 include_truth: bool = True):
+                 include_truth: bool = True, start_paused: bool = False):
         self.scenario_path = str(scenario)
         self.seed = seed
         self.speed = float(speed)
         self.publish_hz = float(publish_hz)
         self.include_truth = bool(include_truth)
-        self.paused = False
+        self.paused = bool(start_paused)
+        # `started` distinguishes "not begun yet" from "paused mid-run", so
+        # the dashboard can show a Start button rather than a Resume button.
+        self.started = not bool(start_paused)
         self.runner: ScenarioRunner | None = None
         self.static: dict = {}
         self.latest: dict = {}
@@ -132,7 +148,10 @@ class SimulationHost:
             if just_finished:
                 self.finished = True
             frame["paused"] = self.paused
+            frame["started"] = self.started
             frame["finished"] = self.finished
+            frame["speed"] = self.speed
+            frame["scenario_file"] = Path(self.scenario_path).name
             self.latest = frame
             await self._broadcast(frame)
 
@@ -182,7 +201,8 @@ def _cmd_pause(host: SimulationHost, _a: dict) -> dict:
 
 def _cmd_resume(host: SimulationHost, _a: dict) -> dict:
     host.paused = False
-    return {"paused": False}
+    host.started = True
+    return {"paused": False, "started": True}
 
 
 def _cmd_step(host: SimulationHost, args: dict) -> dict:
@@ -209,8 +229,9 @@ def _cmd_reset(host: SimulationHost, args: dict) -> dict:
             raise ValueError("seed out of range")
         host.seed = sd
     host._reset_requested = True
-    host.paused = False
-    return {"reset": True, "seed": host.seed}
+    host.paused = bool(args.get("paused", False))
+    host.started = not host.paused
+    return {"reset": True, "seed": host.seed, "paused": host.paused}
 
 
 def _cmd_inject_declared_fault(host: SimulationHost, args: dict) -> dict:
@@ -233,6 +254,36 @@ def _cmd_inject_declared_fault(host: SimulationHost, args: dict) -> dict:
             "onset": spec.onset}
 
 
+def _cmd_list_scenarios(host: SimulationHost, _a: dict) -> dict:
+    """The scenario files the bridge is willing to load."""
+    return {"scenarios": [p.name for p in _allowed_scenarios()],
+            "current": Path(host.scenario_path).name}
+
+
+def _cmd_load_scenario(host: SimulationHost, args: dict) -> dict:
+    """Switch scenarios by FILE NAME, resolved inside the scenarios directory.
+
+    The client sends a bare name, never a path. The name is matched against
+    the directory listing rather than joined onto it, so "../../etc/passwd"
+    and an absolute path both simply fail to match -- the command cannot
+    express a file outside that directory.
+    """
+    name = str(args.get("name", ""))
+    for p in _allowed_scenarios():
+        if p.name == name:
+            host.scenario_path = str(p)
+            if "seed" in args:
+                sd = int(args["seed"])
+                if not 0 <= sd <= 2 ** 31 - 1:
+                    raise ValueError("seed out of range")
+                host.seed = sd
+            host._reset_requested = True
+            host.paused = bool(args.get("paused", False))
+            host.started = not host.paused
+            return {"loaded": p.name, "seed": host.seed, "paused": host.paused}
+    raise ValueError("unknown scenario %r" % name)
+
+
 def _cmd_list_declared_faults(host: SimulationHost, _a: dict) -> dict:
     r = host.runner
     specs = [] if r is None else r.injector.specs
@@ -251,16 +302,23 @@ COMMANDS = {
     "reset": _cmd_reset,
     "inject_declared_fault": _cmd_inject_declared_fault,
     "list_declared_faults": _cmd_list_declared_faults,
+    "list_scenarios": _cmd_list_scenarios,
+    "load_scenario": _cmd_load_scenario,
 }
 
 
 # ----------------------------------------------------------------------
 # HTTP / WS application
 # ----------------------------------------------------------------------
-def make_app(host: SimulationHost, token: str) -> web.Application:
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+
+
+def make_app(host: SimulationHost, token: str,
+             token_disclosure: bool = True) -> web.Application:
     app = web.Application()
     app["host"] = host
     app["token"] = token
+    app["token_disclosure"] = bool(token_disclosure)
 
     async def ws_telemetry(request: web.Request) -> web.WebSocketResponse:
         ws = web.WebSocketResponse(heartbeat=20.0, max_msg_size=4 << 20)
@@ -319,6 +377,34 @@ def make_app(host: SimulationHost, token: str) -> web.Application:
             await ws.send_str(json.dumps(reply))
         return ws
 
+    async def session(request: web.Request) -> web.Response:
+        """Hand the command token to a SAME-ORIGIN page, on loopback only.
+
+        The token exists so that some other page the operator happens to have
+        open cannot drive the rig. It was never meant to be a password they
+        retype: making someone copy a secret out of a terminal to press Play
+        on their own simulator is friction that buys nothing, because this
+        process serves the dashboard itself from an address only this machine
+        can reach.
+
+        It is therefore disclosed here under two conditions. The bridge must
+        be bound to loopback -- once it listens on a routable address the
+        operator has invited other machines in, and the token goes back to
+        being typed. And the reply carries no CORS headers, so a page on
+        another origin may issue the request but the browser will not let its
+        JavaScript read the response.
+
+        None of this widens what a client can do. The real control is the
+        command allowlist: with or without the token, the only verbs that
+        exist are the ones in COMMANDS.
+        """
+        if not request.app["token_disclosure"]:
+            return web.json_response(
+                {"token": None,
+                 "reason": "bridge is not on loopback; enter the token manually"},
+                status=403)
+        return web.json_response({"token": request.app["token"]})
+
     async def health(_r: web.Request) -> web.Response:
         h: SimulationHost = app["host"]
         return web.json_response({
@@ -331,6 +417,7 @@ def make_app(host: SimulationHost, token: str) -> web.Application:
 
     app.router.add_get("/ws/telemetry", ws_telemetry)
     app.router.add_get("/ws/command", ws_command)
+    app.router.add_get("/session", session)
     app.router.add_get("/healthz", health)
 
     dist = ROOT / "dashboard" / "dist"
@@ -356,8 +443,10 @@ async def _serve(args) -> None:
     token = args.token or secrets.token_urlsafe(18)
     host = SimulationHost(args.scenario, seed=args.seed, speed=args.speed,
                           publish_hz=args.publish_hz,
-                          include_truth=not args.no_truth)
-    app = make_app(host, token)
+                          include_truth=not args.no_truth,
+                          start_paused=args.start_paused)
+    disclose = (args.bind in LOOPBACK) and not args.no_auto_token
+    app = make_app(host, token, token_disclosure=disclose)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, args.bind, args.port)
@@ -368,6 +457,12 @@ async def _serve(args) -> None:
     print("  command    : ws://%s:%d/ws/command?token=%s" % (args.bind, args.port, token))
     print("  commands   : %s" % ", ".join(sorted(COMMANDS)))
     print("  ground truth in stream: %s" % (not args.no_truth))
+    print("  dashboard  : http://%s:%d/" % (args.bind, args.port))
+    print("  controls   : %s"
+          % ("enabled automatically in the dashboard"
+             if disclose else "paste the token above into the dashboard"))
+    print("  starts     : %s" % ("paused -- press Start in the dashboard"
+                                 if args.start_paused else "running"))
     sim = asyncio.create_task(host.run())
     try:
         await sim
@@ -393,6 +488,10 @@ def main(argv=None) -> int:
                     help="shared secret for the command socket (generated if omitted)")
     ap.add_argument("--no-truth", action="store_true",
                     help="omit ground truth from the stream")
+    ap.add_argument("--start-paused", action="store_true",
+                    help="wait for Start in the dashboard instead of running")
+    ap.add_argument("--no-auto-token", action="store_true",
+                    help="never disclose the token to the page; type it instead")
     args = ap.parse_args(argv)
     try:
         asyncio.run(_serve(args))
