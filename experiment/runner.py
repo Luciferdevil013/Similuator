@@ -566,6 +566,12 @@ class ScenarioRunner:
             # Confirm against the ESTIMATE, which is what the vehicle knows.
             self.goal_reached = True
             self.finish_reason = "goal reached (estimated)"
+            # The run ends on this step, so let the state machine record
+            # COMPLETE now rather than on a control tick that never comes.
+            self.resilience.step(
+                t, 0.0, health_monitor=self.health, ekf=self.ekf,
+                gnss_state=self.gnss_monitor.state,
+                distance_travelled=self.ugv.distance_travelled, goal_reached=True)
 
         if out.replan_requested and self.trig_plan_check.due(t):
             self._replan(t, out.replan_reason or "controller request")

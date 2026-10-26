@@ -75,6 +75,10 @@ class SimulationHost:
         self._subscribers: set[web.WebSocketResponse] = set()
         self._reset_requested = True
         self._stop = False
+        self.finished = False
+        # Kept so a dashboard that connects (or reloads) after the run ended
+        # still gets the final metrics, not a "still in progress" screen.
+        self.results_msg: dict | None = None
         self._step_budget = 0          # one-shot stepping while paused
 
     # -- lifecycle -----------------------------------------------------
@@ -87,6 +91,8 @@ class SimulationHost:
         self.static = world_static(self.runner)
         self.latest = snapshot(self.runner, include_truth=self.include_truth)
         self._sent_path_version = -1
+        self.finished = False
+        self.results_msg = None
 
     async def run(self) -> None:
         loop = asyncio.get_running_loop()
@@ -104,7 +110,9 @@ class SimulationHost:
             # Advance one publish interval of simulated time per iteration.
             budget = max(1, int((1.0 / self.publish_hz) / dt))
             alive = True
-            if not self.paused:
+            if self.finished:
+                pass                  # nothing left to simulate until a reset
+            elif not self.paused:
                 for _ in range(budget):
                     alive = r.step()
                     if not alive:
@@ -120,16 +128,19 @@ class SimulationHost:
             frame = snapshot(r, include_truth=self.include_truth,
                              last_path_version=self._sent_path_version)
             self._sent_path_version = r.replan_count
+            just_finished = not alive and not self.finished
+            if just_finished:
+                self.finished = True
             frame["paused"] = self.paused
-            frame["finished"] = not alive
+            frame["finished"] = self.finished
             self.latest = frame
             await self._broadcast(frame)
 
-            if not alive:
+            if just_finished:
                 with contextlib.suppress(Exception):
                     res = r.results()
-                    await self._broadcast({"type": "results",
-                                           "metrics": res["metrics"]})
+                    self.results_msg = {"type": "results", "metrics": res["metrics"]}
+                    await self._broadcast(self.results_msg)
                 self.paused = True
 
             # Pace to wall clock so the dashboard animates at a watchable rate.
@@ -260,6 +271,8 @@ def make_app(host: SimulationHost, token: str) -> web.Application:
             await ws.send_str(json.dumps({"type": "world", **h.static}))
             if h.latest:
                 await ws.send_str(json.dumps(h.latest))
+            if h.results_msg:
+                await ws.send_str(json.dumps(h.results_msg))
             async for msg in ws:
                 # Read-only by construction: inbound traffic is discarded.
                 # A client that wants to change something must open the
@@ -322,7 +335,20 @@ def make_app(host: SimulationHost, token: str) -> web.Application:
 
     dist = ROOT / "dashboard" / "dist"
     if dist.is_dir():
-        app.router.add_static("/", dist, show_index=True, follow_symlinks=False)
+        async def index(_r: web.Request) -> web.StreamResponse:
+            return web.FileResponse(dist / "index.html")
+
+        # "/" must serve the app itself, not a directory listing.
+        app.router.add_get("/", index)
+        app.router.add_static("/", dist, follow_symlinks=False)
+    else:
+        async def no_build(_r: web.Request) -> web.Response:
+            return web.Response(
+                status=503, content_type="text/plain",
+                text="Dashboard not built. Run:  cd dashboard && npm install && npm run build\n"
+                     "or use the dev server:  cd dashboard && npm run dev  (http://localhost:5173)\n")
+
+        app.router.add_get("/", no_build)
     return app
 
 

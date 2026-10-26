@@ -10,7 +10,8 @@ cannot be read cannot be reviewed.
     DEGRADED           a fault exists; remaining inputs are being assessed
       -> LIMITED_OPERATION  a documented fallback is available AND its inputs
                             validate
-      -> SAFE_ACTION        uncertainty too high, or a critical sensor is gone
+      -> SAFE_ACTION        uncertainty too high, a critical sensor is gone,
+                            or obstacle sensing (LiDAR) is lost
       -> RECOVERY           fault cleared
     LIMITED_OPERATION  continuing inside an explicit budget
       -> SAFE_ACTION        budget spent, or uncertainty crossed the limit
@@ -67,12 +68,24 @@ class ResilienceConfig:
     degraded_dwell: float = 0.4         # s a condition must hold to enter
     recovery_dwell: float = 6.0         # s clean before returning to NORMAL
     safe_action_min_hold: float = 3.0   # s minimum in SAFE_ACTION
+    # In RECOVERY a lost sensor or a bad GNSS verdict fails the check at once,
+    # but a sigma excursion must persist this long. The filter's covariance
+    # legitimately spikes for a moment (e.g. a gate-lockout reset as the
+    # vehicle pulls away); failing on that one sample made the vehicle bounce
+    # between RECOVERY and SAFE_ACTION every few seconds until timeout.
+    recovery_sigma_grace: float = 2.0
 
     # --- sensors that navigation cannot continue without ------------------
     critical_sensors: tuple[str, ...] = ("imu",)
     # Sensors the dead-reckoning fallback itself depends on. If these are not
     # healthy, the fallback is not available and the answer is SAFE_ACTION.
     fallback_sensors: tuple[str, ...] = ("imu", "wheel_odom")
+    # Obstacle sensing. Driving on without it in a cluttered world is not a
+    # degraded mode, it is driving blind, so its loss forces SAFE_ACTION.
+    perception_sensors: tuple[str, ...] = ("lidar",)
+    # A total GNSS outage produces no messages, so the GNSS monitor (which
+    # runs per fix) never sees it. The health monitor's timeout does.
+    gnss_sensor: str = "gnss"
 
 
 class ResilienceManager:
@@ -130,7 +143,12 @@ class ResilienceManager:
                          if health_monitor.status_of(s) is not SensorStatus.OK]
         fallback_down = [s for s in c.fallback_sensors
                          if health_monitor.status_of(s) is not SensorStatus.OK]
-        gnss_bad = bool(gnss_state.outage or gnss_state.confirmed)
+        perception_down = [s for s in c.perception_sensors
+                           if s in health_monitor.specs
+                           and health_monitor.status_of(s) is not SensorStatus.OK]
+        gnss_silent = (c.gnss_sensor in health_monitor.specs and
+                       health_monitor.status_of(c.gnss_sensor) is not SensorStatus.OK)
+        gnss_bad = bool(gnss_state.outage or gnss_state.confirmed or gnss_silent)
         sigma_h = ekf.pos_sigma_horizontal()
 
         # --- dead-reckoning accounting: running since the last good fix
@@ -174,6 +192,10 @@ class ResilienceManager:
                 self._transition(MissionState.SAFE_ACTION, t,
                                  "critical sensor unavailable: %s" % ",".join(critical_down),
                                  SafeAction.STOP_AND_HOLD)
+            elif perception_down:
+                self._transition(MissionState.SAFE_ACTION, t,
+                                 "obstacle sensing unavailable: %s" % ",".join(perception_down),
+                                 SafeAction.STOP_AND_HOLD)
             elif self._hold("deg", gnss_bad or sigma_h > c.sigma_warn, dt, c.degraded_dwell):
                 self._transition(MissionState.DEGRADED, t,
                                  ("GNSS fault confirmed" if gnss_bad
@@ -186,6 +208,10 @@ class ResilienceManager:
                                   if critical_down
                                   else "position sigma %.2f m > unsafe limit %.2f m"
                                        % (sigma_h, c.sigma_unsafe)),
+                                 SafeAction.STOP_AND_HOLD)
+            elif perception_down:
+                self._transition(MissionState.SAFE_ACTION, t,
+                                 "obstacle sensing unavailable: %s" % ",".join(perception_down),
                                  SafeAction.STOP_AND_HOLD)
             elif fallback_down:
                 # Safety principle 1: the fallback's own inputs must be valid.
@@ -211,6 +237,10 @@ class ResilienceManager:
                                  "fallback inputs lost: %s"
                                  % ",".join(critical_down + fallback_down),
                                  SafeAction.STOP_AND_HOLD)
+            elif perception_down:
+                self._transition(MissionState.SAFE_ACTION, t,
+                                 "obstacle sensing unavailable: %s" % ",".join(perception_down),
+                                 SafeAction.STOP_AND_HOLD)
             elif budget_spent:
                 self._transition(MissionState.SAFE_ACTION, t,
                                  "dead-reckoning budget spent (%.0f s, %.0f m)"
@@ -226,16 +256,26 @@ class ResilienceManager:
 
         elif s is MissionState.SAFE_ACTION:
             held = (t - self.state_entry_time) >= c.safe_action_min_hold
-            clean = (not critical_down and not gnss_bad and sigma_h < c.sigma_recover)
+            clean = (not critical_down and not perception_down and not gnss_bad
+                     and sigma_h < c.sigma_recover)
             if held and self._hold("rec", clean, dt, c.degraded_dwell):
                 self._transition(MissionState.RECOVERY, t,
                                  "inputs restored, validating before resuming")
 
         elif s is MissionState.RECOVERY:
-            clean = (not critical_down and not gnss_bad and sigma_h < c.sigma_recover)
-            if not clean:
+            hard_fail = critical_down + perception_down + (
+                ["gnss"] if gnss_bad else [])
+            sigma_ok = sigma_h < c.sigma_recover
+            clean = not hard_fail and sigma_ok
+            if hard_fail:
                 self._transition(MissionState.SAFE_ACTION, t,
-                                 "recovery check failed, holding",
+                                 "recovery check failed (%s), holding"
+                                 % ",".join(hard_fail),
+                                 SafeAction.STOP_AND_HOLD)
+            elif self._hold("regress", not sigma_ok, dt, c.recovery_sigma_grace):
+                self._transition(MissionState.SAFE_ACTION, t,
+                                 "recovery check failed (position sigma %.2f m), holding"
+                                 % sigma_h,
                                  SafeAction.STOP_AND_HOLD)
             elif self._hold("norm", clean, dt, c.recovery_dwell):
                 self._transition(MissionState.NORMAL, t,

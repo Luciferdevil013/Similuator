@@ -1,0 +1,6 @@
+# Simulator, estimator, planner, experiment runner
+numpy>=1.26
+scipy>=1.11
+pyyaml>=6.0
+# Telemetry bridge (WebSocket server for the dashboard)
+aiohttp>=3.9

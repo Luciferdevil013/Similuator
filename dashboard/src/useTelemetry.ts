@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   BridgeMessage,
   ResultsMessage,
@@ -40,6 +40,17 @@ function wrap180(d: number): number {
   return x;
 }
 
+/** `?token=...` in the page URL wins, so a demo link can carry the token. */
+function initialToken(): string {
+  const fromUrl = new URLSearchParams(window.location.search).get("token");
+  if (fromUrl) return fromUrl;
+  try {
+    return localStorage.getItem("rl.token") ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export interface TelemetryState {
   connected: boolean;
   error: string | null;
@@ -65,14 +76,12 @@ export function useTelemetry(): TelemetryState {
   const [path, setPath] = useState<number[][]>([]);
   const [commandReady, setCommandReady] = useState(false);
   const [commandLog, setCommandLog] = useState<string[]>([]);
-  const [token, setToken] = useState<string>(
-    () => localStorage.getItem("rl.token") ?? ""
-  );
+  const [token, setToken] = useState<string>(initialToken);
 
   // History lives in a ref: it is appended at 20 Hz and only the screens that
   // draw it need to re-render, so it must not drive React state on every frame.
   const historyRef = useRef<HistoryRow[]>([]);
-  const [, bumpHistory] = useState(0);
+  const [historyVersion, bumpHistory] = useState(0);
   const cmdRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -97,6 +106,7 @@ export function useTelemetry(): TelemetryState {
         if (msg.type === "world") {
           setWorld(msg);
           historyRef.current = [];
+          bumpHistory((n) => n + 1);
           setPath([]);
           setResults(null);
           return;
@@ -127,6 +137,9 @@ export function useTelemetry(): TelemetryState {
           clearance: msg.mission_progress.min_clearance_m,
         };
         const h = historyRef.current;
+        // A paused or finished sim keeps re-sending its last frame; only
+        // new simulated time belongs in the history and replay buffer.
+        if (h.length && h[h.length - 1].t >= row.t) return;
         h.push(row);
         if (h.length > HISTORY_LIMIT) h.splice(0, h.length - HISTORY_LIMIT);
         // Re-render the charts at ~4 Hz rather than 20; the 3D view and the
@@ -185,9 +198,20 @@ export function useTelemetry(): TelemetryState {
   );
 
   const persistToken = useCallback((t: string) => {
-    localStorage.setItem("rl.token", t);
+    try {
+      localStorage.setItem("rl.token", t);
+    } catch {
+      /* storage unavailable: the token still works for this session */
+    }
     setToken(t);
   }, []);
+
+  // The ring buffer is mutated in place, so hand the screens a fresh array on
+  // each bump; otherwise memoised consumers (the charts) never see new rows.
+  const history = useMemo(
+    () => historyRef.current.slice(),
+    [historyVersion]
+  );
 
   return {
     connected,
@@ -195,7 +219,7 @@ export function useTelemetry(): TelemetryState {
     world,
     latest,
     results,
-    history: historyRef.current,
+    history,
     path,
     sendCommand,
     commandReady,

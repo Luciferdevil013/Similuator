@@ -95,6 +95,29 @@ class ImuSensor(Sensor):
         self._last_omega = np.zeros(3)
         self._last_t: float | None = None
         self.saturated = False
+        # Running sums of the true rate and specific force over the physics
+        # steps since the last output sample (see `update`).
+        self._acc_w = np.zeros(3)
+        self._acc_f = np.zeros(3)
+        self._acc_n = 0
+
+    def update(self, truth: VehicleTruth, t: float) -> None:
+        """Integrate the truth over every physics step, then sample.
+
+        A real MEMS IMU low-pass filters and decimates internally, so each
+        output is an average over its sample interval. Point-sampling the
+        physics instead aliases any motion faster than half the output rate:
+        when parked on a side slope the chassis yaw rate chatters at the
+        physics rate with zero mean, and a 200 Hz point sample of a 400 Hz
+        chatter always lands on the same phase -- a steady phantom 2 deg/s
+        that rotated the estimated heading by 140 deg during a 70 s stop.
+        """
+        R = quat_to_matrix(truth.q)
+        self._acc_w += np.asarray(truth.omega, dtype=float)
+        self._acc_f += (R.T @ (np.asarray(truth.a, dtype=float) - self.g_enu)
+                        + np.asarray(truth.vibration, dtype=float))
+        self._acc_n += 1
+        super().update(truth, t)
 
     @staticmethod
     def _misalignment_matrix(rng, scale_sigma: float, misalign_sigma: float) -> np.ndarray:
@@ -126,7 +149,16 @@ class ImuSensor(Sensor):
         self.saturated = False
 
         R = quat_to_matrix(truth.q)          # body -> ENU
-        w_true = np.asarray(truth.omega, dtype=float)
+        if self._acc_n:
+            w_true = self._acc_w / self._acc_n
+            f_avg = self._acc_f / self._acc_n
+        else:
+            w_true = np.asarray(truth.omega, dtype=float)
+            f_avg = (R.T @ (np.asarray(truth.a, dtype=float) - self.g_enu)
+                     + np.asarray(truth.vibration, dtype=float))
+        self._acc_w[:] = 0.0
+        self._acc_f[:] = 0.0
+        self._acc_n = 0
 
         # Angular acceleration by backward difference of the true rate. A real
         # IMU does not measure this; it is needed only for the lever-arm term.
@@ -134,11 +166,10 @@ class ImuSensor(Sensor):
         self._last_omega = w_true.copy()
 
         # --- specific force at the body origin, then transported to the IMU
-        f_body = R.T @ (np.asarray(truth.a, dtype=float) - self.g_enu)
+        # (f_avg already includes the terrain-induced vibration, which is a
+        # body-frame specific force.)
         r = self.p.lever_arm
-        f_imu = f_body + np.cross(alpha, r) + np.cross(w_true, np.cross(w_true, r))
-        # Terrain-induced vibration is already a body-frame specific force.
-        f_imu = f_imu + np.asarray(truth.vibration, dtype=float)
+        f_imu = f_avg + np.cross(alpha, r) + np.cross(w_true, np.cross(w_true, r))
 
         # --- gyro
         w_sensed = w_true + (R.T @ self.earth_rate_enu if self.earth_rate_enu.any() else 0.0)
