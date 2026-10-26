@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { HistoryRow } from "../useTelemetry";
 
 export interface Series {
@@ -45,6 +45,11 @@ export function Chart({
   const padR = 8;
 
   const view = useMemo(() => rows.slice(-win), [rows, win]);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  // Index into `view`, not a pixel position: the buffer keeps advancing under
+  // the cursor, and pinning to a sample keeps the readout on the point the
+  // user actually pointed at.
+  const [hover, setHover] = useState<number | null>(null);
 
   const { paths, flagSpans, t0, t1, lo, hi } = useMemo(() => {
     if (view.length < 2) {
@@ -120,11 +125,33 @@ export function Chart({
   }
 
   const ticks = [lo, lo + (hi - lo) / 2, hi];
+  const sxOf = (tt: number) =>
+    padL + ((tt - t0) / Math.max(t1 - t0, 1e-6)) * (W - padL - padR);
+  const syOf = (v: number) =>
+    H - padB - ((v - lo) / (hi - lo)) * (H - padB - padT);
+
+  const onMove = (ev: React.PointerEvent<SVGSVGElement>) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const box = svg.getBoundingClientRect();
+    // The SVG is scaled to the container, so map client x back to viewBox x.
+    const vx = ((ev.clientX - box.left) / box.width) * W;
+    const frac = (vx - padL) / (W - padL - padR);
+    if (frac < 0 || frac > 1) {
+      setHover(null);
+      return;
+    }
+    setHover(Math.min(view.length - 1, Math.max(0, Math.round(frac * (view.length - 1)))));
+  };
+
+  const hv = hover === null ? null : view[hover];
 
   return (
     <div className="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img"
-           aria-label={yLabel ?? "time series"}>
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} width="100%" height={H}
+           role="img" aria-label={yLabel ?? "time series"}
+           onPointerMove={onMove} onPointerLeave={() => setHover(null)}
+           style={{ touchAction: "none" }}>
         {flagSpans.map((s, i) => (
           <rect key={i} x={s.x} y={padT} width={s.w} height={H - padB - padT}
                 className="chart-flag" />
@@ -149,7 +176,38 @@ export function Chart({
                 strokeWidth={1.6}
                 strokeDasharray={p.dashed ? "4 3" : undefined} />
         ))}
+        {hv && (
+          <g className="chart-cursor">
+            <line x1={sxOf(hv.t)} x2={sxOf(hv.t)} y1={padT} y2={H - padB} />
+            {series.map((sr) => {
+              const v = hv[sr.key];
+              if (typeof v !== "number" || !Number.isFinite(v)) return null;
+              return (
+                <circle key={String(sr.key)} cx={sxOf(hv.t)}
+                        cy={syOf(Math.min(v, hi))} r={3} fill={sr.color} />
+              );
+            })}
+          </g>
+        )}
       </svg>
+      {hv && (
+        <div className="chart-readout">
+          <strong>{hv.t.toFixed(2)} s</strong>
+          {series.map((sr) => {
+            const v = hv[sr.key];
+            return (
+              <span key={String(sr.key)}>
+                <i style={{ background: sr.color }} />
+                {sr.label}:{" "}
+                {typeof v === "number" && Number.isFinite(v)
+                  ? v.toFixed(3)
+                  : "–"}
+              </span>
+            );
+          })}
+          <span className="muted">{hv.state.replace(/_/g, " ").toLowerCase()}</span>
+        </div>
+      )}
       <div className="chart-legend">
         {series.map((s) => (
           <span key={String(s.key)}>

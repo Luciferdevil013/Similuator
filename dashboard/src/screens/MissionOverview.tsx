@@ -1,5 +1,7 @@
 import { Card, Stat, StateBadge, num } from "../components/Panels";
 import { Chart } from "../components/Chart";
+import { Timeline } from "../components/Timeline";
+import { Sparkline } from "../components/Sparkline";
 import type { HistoryRow } from "../useTelemetry";
 import type { Telemetry, WorldMessage } from "../types";
 
@@ -106,12 +108,31 @@ export function MissionOverview({ latest, world, history }: Props) {
             {num(p.distance_to_goal_m, 0)} m to goal
           </span>
         </div>
+        <Timeline
+          t={latest.t}
+          duration={world.scenario.duration_s}
+          transitions={latest.transitions}
+          faultWindows={world.fault_windows}
+          faults={latest.fault_history}
+        />
         <p className="reason">{r.reason}</p>
-        {!r.allow_motion && (
-          <p className="alert">
-            {latest.drone ? "Failsafe — landing in place." : `Motion inhibited — ${r.safe_action ?? "safe action"} held.`}
-          </p>
-        )}
+        {/* A finished mission also has motion inhibited, but that is the
+            mission ending rather than a safety hold. Saying "safe action
+            held" there misreports a clean completion as a fault response. */}
+        {!r.allow_motion &&
+          (r.state === "COMPLETE" || r.state === "ABORTED" ? (
+            <p className={r.state === "ABORTED" ? "alert" : "reason"}>
+              {r.state === "COMPLETE"
+                ? "Mission complete — the vehicle has stopped at the goal."
+                : "Mission aborted — the vehicle stopped and will not continue."}
+            </p>
+          ) : (
+            <p className="alert">
+              {latest.drone
+                ? "Failsafe — landing in place."
+                : `Motion inhibited — ${(r.safe_action ?? "safe action").replace(/_/g, " ").toLowerCase()} held.`}
+            </p>
+          ))}
         {gt?.crashed && <p className="alert">Vehicle crashed.</p>}
       </Card>
 
@@ -139,6 +160,13 @@ export function MissionOverview({ latest, world, history }: Props) {
             hint="Scored against ground truth; not available to the navigator."
           />
           <Stat label="yaw σ" value={num(latest.estimate.yaw_sigma_deg, 1)} unit="°" />
+          <div className="spark-cell">
+            <span className="stat-label">trend</span>
+            <Sparkline
+              values={history.slice(-200).map((h) => h.posError)}
+              color="#f0803c"
+            />
+          </div>
         </div>
         <Chart
           rows={history}

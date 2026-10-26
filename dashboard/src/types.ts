@@ -139,6 +139,34 @@ export interface GroundTruth {
   _note: string;
 }
 
+export interface StateTransition {
+  t: number;
+  from: string;
+  to: string;
+  reason: string;
+  dr_time: number;
+  dr_distance: number;
+}
+
+export interface FaultRecord {
+  scenario_id: string;
+  fault_type: string;
+  target: string;
+  onset: number;
+  end: number | null;
+  detected: boolean;
+  detection_time: number | null;
+  detection_latency: number | null;
+  detected_by: string;
+  params: Record<string, unknown>;
+}
+
+export interface FaultWindow {
+  onset: number;
+  end: number;
+  type: string;
+}
+
 export interface Telemetry {
   type: "telemetry";
   t: number;
@@ -150,14 +178,20 @@ export interface Telemetry {
   faults_active: ActiveFault[];
   path_version: number;
   path?: number[][];
+  transitions: StateTransition[];
+  fault_history: FaultRecord[];
   control?: ControlBlock;
   lidar?: LidarOutline;
   battery?: BatteryBlock;
   ground_truth?: GroundTruth;
   drone?: DroneBlock;
   paused?: boolean;
+  /** false before the first Start when the bridge was launched paused. */
+  started?: boolean;
   finished?: boolean;
   session?: string;
+  speed?: number;
+  scenario_file?: string;
 }
 
 export interface ObstacleSpec {
@@ -185,6 +219,7 @@ export interface WorldMessage {
     z_range: [number, number];
   };
   obstacles: ObstacleSpec[];
+  fault_windows: FaultWindow[];
   mission: {
     start: number[];
     goal: number[];
@@ -227,6 +262,7 @@ export type BridgeMessage =
 export type ScreenId =
   | "home"
   | "overview"
+  | "map"
   | "simulation"
   | "sensors"
   | "results"

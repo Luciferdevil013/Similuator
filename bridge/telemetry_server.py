@@ -61,7 +61,11 @@ def _json_error(status: int, errors) -> web.Response:
     return web.json_response({"ok": False, "errors": errors}, status=status)
 
 
-def make_app(sessions: SessionManager, token: str) -> web.Application:
+LOOPBACK = {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
+
+
+def make_app(sessions: SessionManager, token: str,
+             bind: str = "127.0.0.1") -> web.Application:
     app = web.Application(client_max_size=256 << 10)
     app[SESSIONS] = sessions
     app[BATCHES] = BatchManager()
@@ -144,8 +148,19 @@ def make_app(sessions: SessionManager, token: str) -> web.Application:
 
     # -- info / scenarios ----------------------------------------------
     async def api_info(request: web.Request) -> web.Response:
+        # Hand the page its own token when the bridge is bound to loopback
+        # and the request came from loopback. The operator then never has to
+        # copy a secret out of a terminal to press Pause on a simulator
+        # running on their own machine. There are no CORS headers on this
+        # app, so only a same-origin page can read the reply. Off loopback
+        # the token must be supplied -- which is the point at which
+        # supplying it actually means something.
+        peer = request.remote or ""
+        local = bind in LOOPBACK and peer in LOOPBACK
         return web.json_response({
             "ok": True, "authed": authed(request),
+            "token": token if local else None,
+            "token_source": "loopback" if local else "required",
             "commands": sorted(COMMANDS), "schema": schema.describe(),
         })
 
@@ -374,7 +389,7 @@ def make_app(sessions: SessionManager, token: str) -> web.Application:
 async def _serve(args) -> None:
     token = args.token or secrets.token_urlsafe(18)
     sessions = SessionManager(include_truth=not args.no_truth, publish_hz=args.publish_hz)
-    app = make_app(sessions, token)
+    app = make_app(sessions, token, bind=args.bind)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, args.bind, args.port)

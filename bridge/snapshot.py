@@ -113,6 +113,13 @@ def world_static(runner) -> dict:
             "cruise_agl": (float(runner.controller.cfg.cruise_agl)
                            if getattr(runner, "vehicle_type", "ugv") == "drone" else None),
         },
+        # Declared windows are the SCORING TRUTH: when each fault really ran,
+        # independent of whether anything noticed. The dashboard draws these
+        # against the monitor's detection times so the latency is visible as a
+        # gap rather than asserted as a number.
+        "fault_windows": [
+            {"onset": _f(a), "end": _f(b), "type": FaultType(k).name}
+            for a, b, k in runner.injector.active_windows()],
         "faults_declared": [
             {"type": s.fault_type.name, "target": s.target,
              "onset": _f(s.onset), "duration": _f(s.duration),
@@ -206,6 +213,13 @@ def snapshot(runner, *, include_truth: bool = True,
         # version and omitted while unchanged -- it is the largest field in
         # the frame and the dashboard already has it.
         "path_version": int(runner.replan_count),
+        # Mission-state history and the full fault record, not just what is
+        # live right now. Both are short -- a run produces a handful of
+        # transitions -- and sending them whole keeps the dashboard correct
+        # after a reconnect instead of having it reassemble a timeline from
+        # frames it may have missed.
+        "transitions": list(runner.resilience.transitions),
+        "fault_history": runner.injector.summary(),
     }
 
     if ctl is not None:

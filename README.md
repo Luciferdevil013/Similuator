@@ -173,6 +173,15 @@ but the parked IMU-only estimate drifts, which inflates that scenario's RMSE.
 
 ---
 
+## Ground truth is for scoring only
+
+The true pose is recorded, published to the dashboard and used to compute
+every accuracy metric. It is never read by the estimator, the planner or the
+controller. It travels under its own key in the telemetry frame, so an
+accidental dependency on it would be obvious in review.
+
+---
+
 ## Architecture
 
 ```

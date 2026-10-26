@@ -3,8 +3,10 @@ import { useTelemetry } from "./useTelemetry";
 import type { ScreenId } from "./types";
 import { StateBadge, num } from "./components/Panels";
 import { Icon } from "./components/Icons";
+import { MissionControl } from "./components/MissionControl";
 import { Home } from "./screens/Home";
 import { MissionOverview } from "./screens/MissionOverview";
+import { MapScreen } from "./screens/MapScreen";
 import { Simulation3D } from "./screens/Simulation3D";
 import { SensorDiagnostics } from "./screens/SensorDiagnostics";
 import { ExperimentResults } from "./screens/ExperimentResults";
@@ -17,6 +19,7 @@ import type { ScenarioListing, Schema, SessionSummary, Vehicle } from "./api";
 const SCREENS: { id: ScreenId; label: string; icon: string; needsSession: boolean; sub: string }[] = [
   { id: "home", label: "Home", icon: "home", needsSession: false, sub: "Overview of the testbed" },
   { id: "overview", label: "Mission", icon: "mission", needsSession: true, sub: "State, localisation and faults" },
+  { id: "map", label: "Map", icon: "mission", needsSession: true, sub: "Top-down track, path and clearance" },
   { id: "simulation", label: "3D view", icon: "cube", needsSession: true, sub: "Terrain, vehicle and path" },
   { id: "sensors", label: "Sensors", icon: "sensors", needsSession: true, sub: "Health, residuals and biases" },
   { id: "results", label: "Results", icon: "results", needsSession: true, sub: "Scored against ground truth" },
@@ -45,13 +48,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    api.getAuthed<{ authed: boolean; schema: Schema }>("/api/info", token).then((r) => {
-      if (r.ok) {
+    api
+      .getAuthed<{ authed: boolean; schema: Schema; token: string | null }>(
+        "/api/info", token)
+      .then((r) => {
+        if (!r.ok) return;
         setSchema(r.data.schema);
         setAuthed(r.data.authed);
-      }
-    });
-  }, [token]);
+        // On loopback the bridge hands this page its own token, so opening
+        // the dashboard without the ?token= link still gets run controls
+        // instead of a silently read-only UI.
+        if (!r.data.authed && r.data.token) setToken(r.data.token);
+      });
+  }, [token, setToken]);
 
   const refreshScenarios = useCallback(() => {
     api.get<{ scenarios: ScenarioListing[] }>("/api/scenarios").then((r) => {
@@ -183,6 +192,14 @@ export default function App() {
                 <option key={s.id} value={s.id}>{s.id} · {s.label}</option>
               ))}
             </select>
+            {current.needsSession && sessionId && t.latest && (
+              <MissionControl
+                latest={t.latest}
+                authed={authed}
+                speed={currentSession?.speed ?? 1}
+                onCommand={t.sendCommand}
+              />
+            )}
             {t.latest && <StateBadge state={t.latest.resilience.state} />}
             {t.latest && <span className="clock">t {num(t.latest.t, 1)}s</span>}
           </div>
@@ -226,6 +243,9 @@ export default function App() {
           )}
           {t.latest && t.world && screen === "overview" && (
             <MissionOverview latest={t.latest} world={t.world} history={t.history} />
+          )}
+          {t.latest && t.world && screen === "map" && (
+            <MapScreen latest={t.latest} world={t.world} path={t.path} history={t.history} />
           )}
           {t.latest && t.world && screen === "simulation" && (
             <Simulation3D latest={t.latest} world={t.world} path={t.path} history={t.history} />

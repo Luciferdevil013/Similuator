@@ -263,6 +263,17 @@ export function ReplayExport({
           </button>
         </div>
         <div className="btn-row">
+          <button
+            disabled={!commandReady}
+            onClick={() =>
+              sendCommand("reset", { seed: Math.floor(Math.random() * 100000) })
+            }
+            title="Re-run the same scenario with a different random seed."
+          >
+            new seed
+          </button>
+        </div>
+        <div className="btn-row">
           <label className="muted small">
             pacing ×{speed}
             <input

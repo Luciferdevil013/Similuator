@@ -288,8 +288,11 @@ def _cmd_reset(s: SimulationSession, args: dict) -> dict:
             raise ValueError("seed out of range")
         s.seed = sd
     s._reset_requested = True
-    s.paused = False
-    return {"reset": True, "seed": s.seed}
+    # Default to running, as every existing caller expects, but let a caller
+    # ask for the rebuilt scenario to wait at the start -- which is what the
+    # header's Restart offers, and it should not quietly run instead.
+    s.paused = bool(args.get("paused", False))
+    return {"reset": True, "seed": s.seed, "paused": s.paused}
 
 
 def _cmd_inject_declared_fault(s: SimulationSession, args: dict) -> dict:
