@@ -1,0 +1,16 @@
+kind,t,detail
+fault_onset,45.0,OBSTACLE_APPEARS on world
+fault_detected,60.248,OBSTACLE_APPEARS by costmap:lidar_marked (latency 15.25s)
+fault_onset,95.0,GNSS_OUTAGE on gnss
+fault_detected,95.95,GNSS_OUTAGE by sensor_health:no message for >1.00 s (latency 0.95s)
+fault_onset,185.0,GNSS_INCONSISTENCY on gnss
+state_transition,96.34,NORMAL -> DEGRADED: GNSS fault confirmed
+state_transition,96.36,DEGRADED -> LIMITED_OPERATION: fallback validated; continuing within budget (75 s / 60 m)
+state_transition,151.7,"LIMITED_OPERATION -> RECOVERY: fault cleared, validating"
+state_transition,157.72,RECOVERY -> NORMAL: validated clean for 6 s
+state_transition,197.44,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 280.0 m"
+plan,89.16,"obstacle at 1.24 m inside 1.75 m braking distance: ok, 139.6 m"
+plan,89.66,"obstacle at 1.40 m inside 1.42 m braking distance: ok, 126.0 m"
+plan,91.16,"cross-track error 3.51 m: ok, 124.0 m"
+plan,94.9,"cross-track error 3.79 m: ok, 122.3 m"

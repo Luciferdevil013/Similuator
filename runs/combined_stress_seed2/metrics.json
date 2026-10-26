@@ -2,33 +2,33 @@
  "scenario_id": "combined_stress",
  "seed": 2,
  "accuracy": {
-  "position_rmse_m": 63.98013365181233,
-  "position_rmse_horizontal_m": 63.98013365181233,
-  "position_rmse_vertical_m": 1.040006460307573,
-  "position_error_mean_m": 19.599014373808714,
-  "position_error_p95_m": 139.7287495414733,
-  "position_error_max_m": 422.6205630334603,
+  "position_rmse_m": 3.0439929286157694,
+  "position_rmse_horizontal_m": 3.0439929286157694,
+  "position_rmse_vertical_m": 1.1012685996845877,
+  "position_error_mean_m": 2.6905320944230766,
+  "position_error_p95_m": 5.031536197190513,
+  "position_error_max_m": 7.392159549761244,
   "samples": 8397
  },
  "consistency": {
-  "normalised_error_mean": 4.72376859075161,
-  "normalised_error_p95": 20.827533055920302,
-  "fraction_within_3sigma": 0.6947719423603668,
+  "normalised_error_mean": 2.653899406530621,
+  "normalised_error_p95": 4.7378751867497755,
+  "fraction_within_3sigma": 0.3695367393116589,
   "overconfident": true
  },
  "detection": {
   "faults_declared": 4,
-  "faults_detected": 3,
-  "detection_rate": 0.75,
-  "detection_latency_mean_s": 17.91566666666667,
-  "detection_latency_max_s": 52.347,
+  "faults_detected": 4,
+  "detection_rate": 1.0,
+  "detection_latency_mean_s": 12.714250000000002,
+  "detection_latency_max_s": 43.36,
   "per_fault": [
    {
     "type": "OBSTACLE_APPEARS",
     "target": "world",
     "onset": 45.0,
     "detected": true,
-    "latency_s": 52.347,
+    "latency_s": 43.36,
     "detected_by": "costmap:lidar_marked"
    },
    {
@@ -43,9 +43,9 @@
     "type": "GNSS_INCONSISTENCY",
     "target": "gnss",
     "onset": 185.0,
-    "detected": false,
-    "latency_s": null,
-    "detected_by": ""
+    "detected": true,
+    "latency_s": 6.097,
+    "detected_by": "gnss_monitor:few_satellites:4"
    },
    {
     "type": "LIDAR_DROPOUT",
@@ -60,7 +60,7 @@
  "false_alarms": {
   "clean_epochs": 225,
   "clean_span_s": 44.777499999999996,
-  "flagged_epoch_fraction": 0.0044444444444444444,
+  "flagged_epoch_fraction": 0.0,
   "confirmed_epoch_fraction": 0.0,
   "false_alarm_events": 0,
   "false_alarms_per_hour": 0.0
@@ -70,38 +70,38 @@
    {
     "fault_type": "OBSTACLE_APPEARS",
     "onset": 45.0,
-    "resolved_as": "SAFE_ACTION",
-    "recovery_time_s": 70.64
+    "resolved_as": "NORMAL",
+    "recovery_time_s": 118.32
    },
    {
     "fault_type": "GNSS_OUTAGE",
     "onset": 95.0,
-    "resolved_as": "SAFE_ACTION",
-    "recovery_time_s": 20.64
+    "resolved_as": "NORMAL",
+    "recovery_time_s": 68.32
    },
    {
     "fault_type": "GNSS_INCONSISTENCY",
     "onset": 185.0,
     "resolved_as": "SAFE_ACTION",
-    "recovery_time_s": 82.3
+    "recovery_time_s": 80.46
    },
    {
     "fault_type": "LIDAR_DROPOUT",
     "onset": 265.0,
     "resolved_as": "SAFE_ACTION",
-    "recovery_time_s": 2.3
+    "recovery_time_s": 0.46
    }
   ],
-  "recovery_time_mean_s": 43.97,
-  "recovery_time_max_s": 82.3,
+  "recovery_time_mean_s": 66.88999999999999,
+  "recovery_time_max_s": 118.32,
   "unresolved_faults": 0
  },
  "path": {
-  "distance_travelled_m": 330.9483986056093,
+  "distance_travelled_m": 130.11876530056642,
   "straight_line_m": 244.65894629054543,
-  "efficiency_vs_straight_line": 0.7392661433666736,
+  "efficiency_vs_straight_line": 1.8802741151547062,
   "planned_path_m": 296.358170748588,
-  "efficiency_vs_plan": 0.8954815070785629
+  "efficiency_vs_plan": 2.277597470772326
  },
  "availability": {
   "per_sensor": {
@@ -153,18 +153,18 @@
  "outcome": {
   "goal_reached": false,
   "final_state": "ABORTED",
-  "collisions": 0,
-  "min_obstacle_clearance_m": 0.8572892146231836,
+  "collisions": 94315,
+  "min_obstacle_clearance_m": -0.5747924278252133,
   "duration_s": 420.0025,
   "timed_out": true,
   "safe": false,
   "mission_success": false,
   "safe_stop_short_of_goal": false,
   "finish_reason": "timeout",
-  "replans": 190,
-  "failed_plans": 166,
+  "replans": 330,
+  "failed_plans": 200,
   "alignment_time_s": 0.1225,
-  "ekf_gate_lockout_resets": 89,
-  "realtime_factor": 2.9885507027090736
+  "ekf_gate_lockout_resets": 1,
+  "realtime_factor": 1.6393686885316947
  }
 }

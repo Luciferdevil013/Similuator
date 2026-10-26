@@ -1,0 +1,27 @@
+kind,t,detail
+fault_onset,45.0,OBSTACLE_APPEARS on world
+fault_detected,46.752,OBSTACLE_APPEARS by costmap:lidar_marked (latency 1.75s)
+fault_onset,95.0,GNSS_OUTAGE on gnss
+fault_detected,95.95,GNSS_OUTAGE by sensor_health:no message for >1.00 s (latency 0.95s)
+fault_onset,185.0,GNSS_INCONSISTENCY on gnss
+fault_detected,253.523,GNSS_INCONSISTENCY by gnss_monitor:no_fix (latency 68.52s)
+fault_onset,265.0,LIDAR_DROPOUT on lidar
+fault_detected,265.5,LIDAR_DROPOUT by sensor_health:no message for >0.50 s (latency 0.50s)
+state_transition,96.34,NORMAL -> DEGRADED: GNSS fault confirmed
+state_transition,96.36,DEGRADED -> LIMITED_OPERATION: fallback validated; continuing within budget (75 s / 60 m)
+state_transition,151.7,"LIMITED_OPERATION -> RECOVERY: fault cleared, validating"
+state_transition,157.72,RECOVERY -> NORMAL: validated clean for 6 s
+state_transition,253.92,NORMAL -> DEGRADED: GNSS fault confirmed
+state_transition,253.94,DEGRADED -> LIMITED_OPERATION: fallback validated; continuing within budget (75 s / 60 m)
+state_transition,264.3,"LIMITED_OPERATION -> RECOVERY: fault cleared, validating"
+state_transition,265.5,"RECOVERY -> SAFE_ACTION: recovery check failed (lidar), holding"
+state_transition,312.08,"SAFE_ACTION -> RECOVERY: inputs restored, validating before resuming"
+state_transition,318.1,RECOVERY -> NORMAL: validated clean for 6 s
+state_transition,338.72,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 289.5 m"
+plan,83.86,"obstacle at 0.77 m inside 0.86 m braking distance: ok, 177.8 m"
+plan,94.06,"obstacle at 1.21 m inside 1.23 m braking distance: ok, 192.0 m"
+plan,118.08,"obstacle at 1.01 m inside 1.01 m braking distance: ok, 202.5 m"
+plan,118.76,"obstacle at 0.95 m inside 0.96 m braking distance: ok, 201.0 m"
+plan,143.06,"obstacle at 0.82 m inside 0.82 m braking distance: FAILED (unreachable), 0.0 m"
+plan,258.92,"cross-track error -6.11 m: ok, 43.3 m"

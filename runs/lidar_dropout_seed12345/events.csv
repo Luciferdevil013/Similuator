@@ -1,0 +1,8 @@
+kind,t,detail
+fault_onset,80.0,LIDAR_DROPOUT on lidar
+fault_detected,80.5,LIDAR_DROPOUT by sensor_health:no message for >0.50 s (latency 0.50s)
+state_transition,80.5,NORMAL -> SAFE_ACTION: obstacle sensing unavailable: lidar
+state_transition,152.04,"SAFE_ACTION -> RECOVERY: inputs restored, validating before resuming"
+state_transition,158.06,RECOVERY -> NORMAL: validated clean for 6 s
+state_transition,235.94,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 285.2 m"

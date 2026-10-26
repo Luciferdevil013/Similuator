@@ -2,18 +2,18 @@
  "scenario_id": "baseline_normal",
  "seed": 7,
  "accuracy": {
-  "position_rmse_m": 1.588172765508426,
-  "position_rmse_horizontal_m": 1.588172765508426,
-  "position_rmse_vertical_m": 1.1355721287445175,
-  "position_error_mean_m": 1.4289784427647674,
-  "position_error_p95_m": 2.6168852280658776,
-  "position_error_max_m": 5.307272884762038,
-  "samples": 7570
+  "position_rmse_m": 1.5152278970311954,
+  "position_rmse_horizontal_m": 1.5152278970311954,
+  "position_rmse_vertical_m": 1.270789955059077,
+  "position_error_mean_m": 1.415616104586368,
+  "position_error_p95_m": 2.4340152765057628,
+  "position_error_max_m": 3.0791671539258387,
+  "samples": 5735
  },
  "consistency": {
-  "normalised_error_mean": 1.393220351707123,
-  "normalised_error_p95": 2.573920474225255,
-  "fraction_within_3sigma": 0.9799207397622193,
+  "normalised_error_mean": 1.428293827546295,
+  "normalised_error_p95": 2.4587018746681437,
+  "fraction_within_3sigma": 0.9961639058413252,
   "overconfident": false
  },
  "detection": {
@@ -25,12 +25,12 @@
   "per_fault": []
  },
  "false_alarms": {
-  "clean_epochs": 1893,
-  "clean_span_s": 378.395,
-  "flagged_epoch_fraction": 0.02641310089804543,
-  "confirmed_epoch_fraction": 0.030110935023771792,
-  "false_alarm_events": 2,
-  "false_alarms_per_hour": 19.027735567330435
+  "clean_epochs": 1434,
+  "clean_span_s": 286.59999999999997,
+  "flagged_epoch_fraction": 0.001394700139470014,
+  "confirmed_epoch_fraction": 0.0,
+  "false_alarm_events": 0,
+  "false_alarms_per_hour": 0.0
  },
  "recovery": {
   "per_fault": [],
@@ -39,74 +39,74 @@
   "unresolved_faults": 0
  },
  "path": {
-  "distance_travelled_m": 428.7693544917259,
+  "distance_travelled_m": 397.14163780555896,
   "straight_line_m": 244.65894629054543,
-  "efficiency_vs_straight_line": 0.5706073527119735,
+  "efficiency_vs_straight_line": 0.6160495979279079,
   "planned_path_m": 269.358170748588,
-  "efficiency_vs_plan": 0.6282122729314273
+  "efficiency_vs_plan": 0.6782420806766831
  },
  "availability": {
   "per_sensor": {
    "imu": {
-    "expected": 75729,
-    "published": 75729,
+    "expected": 57381,
+    "published": 57381,
     "dropped": 0,
     "availability": 1.0
    },
    "gnss": {
-    "expected": 1894,
-    "published": 1894,
+    "expected": 1435,
+    "published": 1435,
     "dropped": 0,
     "availability": 1.0
    },
    "wheel_odom": {
-    "expected": 18933,
-    "published": 18933,
+    "expected": 14346,
+    "published": 14345,
     "dropped": 0,
-    "availability": 1.0
+    "availability": 0.9999302941586505
    },
    "magnetometer": {
-    "expected": 18933,
-    "published": 18933,
+    "expected": 14346,
+    "published": 14345,
     "dropped": 0,
-    "availability": 1.0
+    "availability": 0.9999302941586505
    },
    "barometer": {
-    "expected": 18933,
-    "published": 18933,
+    "expected": 14346,
+    "published": 14345,
     "dropped": 0,
-    "availability": 1.0
+    "availability": 0.9999302941586505
    },
    "battery": {
-    "expected": 1894,
-    "published": 1894,
+    "expected": 1435,
+    "published": 1435,
     "dropped": 0,
     "availability": 1.0
    },
    "lidar": {
-    "expected": 3787,
-    "published": 3787,
+    "expected": 2870,
+    "published": 2870,
     "dropped": 0,
     "availability": 1.0
    }
   },
-  "mean_availability": 1.0
+  "mean_availability": 0.999970126067993
  },
  "outcome": {
   "goal_reached": true,
-  "final_state": "NORMAL",
+  "final_state": "COMPLETE",
   "collisions": 0,
-  "min_obstacle_clearance_m": 1.7532361682263746,
-  "duration_s": 378.6425,
+  "min_obstacle_clearance_m": 1.5122298511688075,
+  "duration_s": 286.90250000000003,
   "timed_out": false,
   "safe": true,
   "mission_success": true,
   "safe_stop_short_of_goal": false,
   "finish_reason": "goal reached (estimated)",
-  "replans": 67,
-  "failed_plans": 99,
+  "replans": 30,
+  "failed_plans": 25,
   "alignment_time_s": 0.10250000000000001,
-  "ekf_gate_lockout_resets": 83,
-  "realtime_factor": 3.9526945026558256
+  "ekf_gate_lockout_resets": 2,
+  "realtime_factor": 2.6482343494422644
  }
 }

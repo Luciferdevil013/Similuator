@@ -153,6 +153,24 @@ time, path efficiency, per-sensor data availability, and mission outcome. *Succe
 reaching the goal with zero collisions. A safe stop short of the goal is reported separately
 and is never counted as a success.
 
+### Current results (simulated)
+
+All 9 scenarios, regenerated with the current code (`runs/summary.md`, `runs/env_*/summary.md`).
+*Success* = goal reached with zero collisions.
+
+| Map | Trials | Success |
+|---|---|---|
+| Rolling hills (default), seeds 12345 / 2 / 7 | 27 | 20 (seed 12345: 9/9) |
+| Dense forest, seed 12345 | 9 | 9 |
+| Flat open field, seed 12345 | 9 | 8 |
+| Rocky desert, seed 12345 | 9 | 8 |
+| Mountain pass, seed 12345 | 9 | 6 |
+
+Where it still fails: `combined_stress` (four faults in one run) often runs out of time, the
+slowly ramped GNSS offset is rarely confirmed, and IMU bias is not detected (the filter absorbs
+it as a bias estimate). With odometry *and* GNSS lost (`comms_loss`) the rover stops correctly,
+but the parked IMU-only estimate drifts, which inflates that scenario's RMSE.
+
 ---
 
 ## Architecture
@@ -195,8 +213,10 @@ Data flow: `simulator → sensor messages → EKF / monitors → resilience FSM 
 ## Known limitations / next steps
 
 - No real Gazebo / ROS 2 / PX4 integration yet; the drone pipeline is not started.
-- A slowly ramped GNSS offset (`gnss_inconsistency`) is detected late: the filter partly
-  follows the offset before the monitor confirms it.
+- A slowly ramped GNSS offset (`gnss_inconsistency`) is rarely confirmed: the filter partly
+  follows the offset before the monitor's drift test trips.
+- IMU bias faults are absorbed by the filter's bias states rather than flagged.
+- Live sessions share one CPU core; batch sweeps use all cores.
 - During long dead-reckoning the reported σ underestimates the true error. The DR budget, not
   σ, is what makes the rover stop.
 

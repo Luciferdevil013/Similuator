@@ -1,0 +1,128 @@
+{
+ "scenario_id": "new_obstacle",
+ "seed": 12345,
+ "accuracy": {
+  "position_rmse_m": 0.8638019579951495,
+  "position_rmse_horizontal_m": 0.8638019579951495,
+  "position_rmse_vertical_m": 0.9777738490349565,
+  "position_error_mean_m": 0.7803633042579977,
+  "position_error_p95_m": 1.3860128443111532,
+  "position_error_max_m": 1.8289613392660635,
+  "samples": 2938
+ },
+ "consistency": {
+  "normalised_error_mean": 0.7871732195748264,
+  "normalised_error_p95": 1.4000195152445982,
+  "fraction_within_3sigma": 1.0,
+  "overconfident": false
+ },
+ "detection": {
+  "faults_declared": 1,
+  "faults_detected": 1,
+  "detection_rate": 1.0,
+  "detection_latency_mean_s": 1.953,
+  "detection_latency_max_s": 1.953,
+  "per_fault": [
+   {
+    "type": "OBSTACLE_APPEARS",
+    "target": "world",
+    "onset": 60.0,
+    "detected": true,
+    "latency_s": 1.953,
+    "detected_by": "costmap:lidar_marked"
+   }
+  ]
+ },
+ "false_alarms": {
+  "clean_epochs": 300,
+  "clean_span_s": 59.8025,
+  "flagged_epoch_fraction": 0.0,
+  "confirmed_epoch_fraction": 0.0,
+  "false_alarm_events": 0,
+  "false_alarms_per_hour": 0.0
+ },
+ "recovery": {
+  "per_fault": [
+   {
+    "fault_type": "OBSTACLE_APPEARS",
+    "onset": 60.0,
+    "resolved_as": "COMPLETE",
+    "recovery_time_s": 86.96
+   }
+  ],
+  "recovery_time_mean_s": 86.96,
+  "recovery_time_max_s": 86.96,
+  "unresolved_faults": 0
+ },
+ "path": {
+  "distance_travelled_m": 251.79368472026405,
+  "straight_line_m": 244.65894629054543,
+  "efficiency_vs_straight_line": 0.971664347191054,
+  "planned_path_m": 278.9482681718907,
+  "efficiency_vs_plan": 1.1078445771258902
+ },
+ "availability": {
+  "per_sensor": {
+   "imu": {
+    "expected": 29393,
+    "published": 29393,
+    "dropped": 0,
+    "availability": 1.0
+   },
+   "gnss": {
+    "expected": 735,
+    "published": 735,
+    "dropped": 0,
+    "availability": 1.0
+   },
+   "wheel_odom": {
+    "expected": 7349,
+    "published": 7348,
+    "dropped": 0,
+    "availability": 0.9998639270649068
+   },
+   "magnetometer": {
+    "expected": 7349,
+    "published": 7348,
+    "dropped": 0,
+    "availability": 0.9998639270649068
+   },
+   "barometer": {
+    "expected": 7349,
+    "published": 7348,
+    "dropped": 0,
+    "availability": 0.9998639270649068
+   },
+   "battery": {
+    "expected": 735,
+    "published": 735,
+    "dropped": 0,
+    "availability": 1.0
+   },
+   "lidar": {
+    "expected": 1470,
+    "published": 1470,
+    "dropped": 0,
+    "availability": 1.0
+   }
+  },
+  "mean_availability": 0.9999416830278173
+ },
+ "outcome": {
+  "goal_reached": true,
+  "final_state": "COMPLETE",
+  "collisions": 0,
+  "min_obstacle_clearance_m": 1.0678175433309538,
+  "duration_s": 146.9625,
+  "timed_out": false,
+  "safe": true,
+  "mission_success": true,
+  "safe_stop_short_of_goal": false,
+  "finish_reason": "goal reached (estimated)",
+  "replans": 1,
+  "failed_plans": 0,
+  "alignment_time_s": 0.1,
+  "ekf_gate_lockout_resets": 0,
+  "realtime_factor": 2.5802549220966164
+ }
+}

@@ -1,0 +1,10 @@
+kind,t,detail
+fault_onset,60.0,OBSTACLE_APPEARS on world
+fault_detected,60.047,OBSTACLE_APPEARS by costmap:lidar_marked (latency 0.05s)
+state_transition,146.82,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 255.6 m"
+plan,65.56,"obstacle at 1.51 m inside 1.88 m braking distance: ok, 134.0 m"
+plan,66.06,"obstacle at 0.77 m inside 0.94 m braking distance: ok, 135.0 m"
+plan,66.66,"obstacle at 0.72 m inside 0.75 m braking distance: ok, 134.7 m"
+plan,67.16,"obstacle at 0.69 m inside 0.75 m braking distance: ok, 134.7 m"
+plan,67.66,"obstacle at inf m inside 0.79 m braking distance: ok, 134.7 m"

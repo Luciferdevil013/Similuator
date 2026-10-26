@@ -1,0 +1,7 @@
+kind,t,detail
+fault_onset,100.0,GNSS_INCONSISTENCY on gnss
+state_transition,155.7,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 278.9 m"
+plan,106.3,"cross-track error 3.61 m: ok, 107.4 m"
+plan,108.74,"cross-track error 3.62 m: ok, 84.3 m"
+plan,117.6,"obstacle at 1.80 m inside 1.81 m braking distance: ok, 71.2 m"

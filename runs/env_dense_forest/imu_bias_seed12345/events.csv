@@ -1,0 +1,4 @@
+kind,t,detail
+fault_onset,90.0,IMU_BIAS on imu
+state_transition,148.58,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 278.9 m"

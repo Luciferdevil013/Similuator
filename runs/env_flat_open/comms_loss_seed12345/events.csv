@@ -1,0 +1,19 @@
+kind,t,detail
+fault_onset,95.0,COMMUNICATION_LOSS on wheel_odom
+fault_detected,95.1,COMMUNICATION_LOSS by sensor_health:no message for >0.08 s (latency 0.10s)
+fault_onset,100.0,GNSS_OUTAGE on gnss
+fault_detected,100.95,GNSS_OUTAGE by sensor_health:no message for >1.00 s (latency 0.95s)
+state_transition,101.34,NORMAL -> DEGRADED: GNSS fault confirmed
+state_transition,101.36,DEGRADED -> SAFE_ACTION: no validated fallback: wheel_odom unhealthy
+state_transition,177.14,"SAFE_ACTION -> RECOVERY: inputs restored, validating before resuming"
+state_transition,183.16,RECOVERY -> NORMAL: validated clean for 6 s
+state_transition,215.72,NORMAL -> COMPLETE: goal reached
+plan,0.0,"initial plan: ok, 255.6 m"
+plan,145.66,"cross-track error -3.51 m: ok, 79.5 m"
+plan,153.38,"cross-track error -3.51 m: ok, 85.8 m"
+plan,158.84,"cross-track error -3.51 m: ok, 91.8 m"
+plan,163.82,"cross-track error -3.50 m: ok, 97.8 m"
+plan,167.78,"cross-track error -3.51 m: ok, 103.8 m"
+plan,171.12,"cross-track error -3.51 m: ok, 109.2 m"
+plan,173.98,"cross-track error -3.52 m: ok, 114.1 m"
+plan,175.1,"cross-track error 21.87 m: ok, 66.5 m"
