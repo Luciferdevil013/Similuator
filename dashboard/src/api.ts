@@ -129,6 +129,7 @@ export interface SessionSummary {
   finished: boolean;
   building: boolean;
   error: string | null;
+  warning?: string | null;
   t: number;
   duration: number;
   state: string | null;

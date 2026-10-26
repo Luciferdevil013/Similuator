@@ -303,3 +303,4 @@ fieldset.fields legend { color: var(--muted); font-size: 10.5px; text-transform:
 }
 .session-select { max-width: 260px; }
 .splash button { margin-top: 8px; }
+.alert.banner { margin: 0 0 12px; font-size: 13px; }

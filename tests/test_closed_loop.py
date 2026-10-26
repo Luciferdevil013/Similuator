@@ -50,3 +50,17 @@ def test_open_ground_does_not_trip_lidar_stale():
     r, _ = short_run({"base": "baseline_normal", "environment": "flat_open"}, 30)
     assert not any("lidar" in tr["reason"] for tr in r.resilience.transitions)
     assert r.ugv.distance_travelled > 20
+
+
+def test_standoff_guard_only_blocks_ahead():
+    import numpy as np
+    from nav.controller import ControllerConfig, PurePursuitController
+    c = PurePursuitController(ControllerConfig())
+    angles = np.linspace(-np.pi, np.pi, 360, endpoint=False)
+    behind = np.full(360, np.inf)
+    behind[np.abs(np.abs(angles) - np.pi) < 0.05] = 0.6      # something 0.6 m behind
+    f = c._scan_features(behind, angles, 0.0)
+    assert f["too_close"] and not f["blocked"]                # may creep away from it
+    ahead = np.full(360, np.inf)
+    ahead[np.abs(angles) < 0.05] = 0.6
+    assert c._scan_features(ahead, angles, 0.0)["blocked"]

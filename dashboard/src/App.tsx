@@ -80,6 +80,7 @@ export default function App() {
 
   const current = SCREENS.find((s) => s.id === screen)!;
   const showSessionScreen = current.needsSession;
+  const currentSession = sessions.find((s) => s.id === sessionId);
 
   return (
     <div className="app">
@@ -150,6 +151,10 @@ export default function App() {
               {t.missing ? "Pick another session from the menu." : "Generating terrain and obstacles."}
             </p>
           </div>
+        )}
+
+        {showSessionScreen && currentSession?.warning && (
+          <p className="alert banner">⚠ {currentSession.warning}</p>
         )}
 
         {t.latest && t.world && screen === "overview" && (

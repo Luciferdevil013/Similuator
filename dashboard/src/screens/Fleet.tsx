@@ -233,7 +233,11 @@ export function Fleet({ sessions, current, token, authed, onOpen, refreshSession
 }
 
 function s_error(sessions: SessionSummary[]) {
-  const bad = sessions.filter((s) => s.error);
+  const bad = sessions.filter((s) => s.error || s.warning);
   if (!bad.length) return null;
-  return <p className="alert">{bad.map((s) => `${s.id}: ${s.error}`).join("\n")}</p>;
+  return (
+    <p className="alert">
+      {bad.map((s) => <span key={s.id}>{s.id}: {s.error ?? s.warning}<br /></span>)}
+    </p>
+  );
 }

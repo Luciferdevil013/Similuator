@@ -212,6 +212,12 @@ class SimulationSession:
             "finished": self.finished,
             "building": self._building or self._reset_requested,
             "error": self.error,
+            # The initial plan failing means this map has no drivable route
+            # from start to goal; say so now rather than at the timeout.
+            "warning": ("no drivable route from start to goal on this map "
+                        "(try another seed, environment or goal)"
+                        if r is not None and r.replan_count == 0 and r.failed_plans > 0
+                        else None),
             "t": lat.get("t", 0.0),
             "duration": float(self.raw_cfg.get("duration", 420.0)),
             "state": res.get("state"),

@@ -59,8 +59,11 @@ ENVIRONMENTS: dict[str, dict] = {
     },
     "mountain_pass": {
         "label": "Mountain pass",
-        "description": "High relief with sharp ridges: long detours, steep cross-slopes.",
-        "world": {"relief": 24.0, "octaves": 6, "ridge_mix": 0.6,
+        "description": "High relief with sharp ridges: long detours, steep cross-slopes. "
+                       "Some seeds have no drivable route (the Fleet tab warns).",
+        # 18 m / 0.45 is about the steepest that still leaves a route within
+        # the rover's slope limits on most seeds; 24 m / 0.6 left none.
+        "world": {"relief": 18.0, "octaves": 6, "ridge_mix": 0.45,
                   "n_obstacles": 30, "keep_clear": 8.0, "max_slope_deg": 25.0},
     },
     "dense_forest": {
