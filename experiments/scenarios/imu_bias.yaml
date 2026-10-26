@@ -1,0 +1,57 @@
+id: imu_bias
+description: >
+  A slowly ramping gyro and accelerometer bias beyond what the filter's bias
+  states are tuned to absorb. Tests whether the resulting estimate error and
+  uncertainty growth become measurable and trigger a response.
+seed: 12345
+duration: 420.0
+physics_dt: 0.0025
+detail: nav
+record_rate: 20.0
+
+world:
+  size_x: 200.0
+  size_y: 200.0
+  resolution: 0.5
+  relief: 14.0
+  octaves: 6
+  ridge_mix: 0.35
+  max_slope_deg: 25.0
+  costmap_resolution: 0.75
+  n_obstacles: 45
+  keep_clear: 7.0
+  origin_lla: [47.3977, 8.5456, 488.0]
+  magnetic:
+    declination_deg: 2.9
+    inclination_deg: 63.1
+    intensity_nt: 48500.0
+
+mission:
+  start: [12.0, 12.0]
+  goal: [185.0, 185.0]
+  goal_tolerance: 2.5
+  timeout_s: 420.0
+
+vehicle:
+  robot_radius: 0.45
+  params: {}
+
+sensors:
+  imu: {rate_hz: 200.0}
+  gnss: {rate_hz: 5.0}
+  wheel_odom: {rate_hz: 50.0}
+  magnetometer: {rate_hz: 50.0}
+  barometer: {rate_hz: 50.0}
+  battery: {rate_hz: 5.0}
+  lidar: {rate_hz: 10.0}
+
+faults:
+  - type: IMU_BIAS
+    target: imu
+    onset: 90.0
+    duration: 120.0
+    ramp: 25.0
+    params:
+      gyro_bias: [0.0, 0.0, 0.022]
+      accel_bias: [0.30, 0.18, 0.0]
+    label: ramped inertial bias

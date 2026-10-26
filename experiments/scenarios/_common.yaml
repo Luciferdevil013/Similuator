@@ -1,0 +1,3 @@
+# Shared world/mission definition referenced by every scenario below.
+# Kept identical across scenarios so that the baseline and the fault runs are
+# comparable, which the evaluation plan requires.

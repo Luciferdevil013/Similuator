@@ -1,0 +1,13 @@
+kind,t,detail
+fault_onset,100.0,GNSS_INCONSISTENCY on gnss
+plan,0.0,"initial plan: ok, 285.2 m"
+plan,89.16,"obstacle at 1.15 m inside 1.40 m braking distance: ok, 169.1 m"
+plan,90.86,"obstacle at 1.19 m inside 1.26 m braking distance: ok, 136.5 m"
+plan,98.96,"obstacle at inf m inside 0.94 m braking distance: ok, 130.3 m"
+plan,107.06,"obstacle at inf m inside 1.43 m braking distance: ok, 120.7 m"
+plan,107.56,"obstacle at inf m inside 0.83 m braking distance: ok, 120.0 m"
+plan,108.06,"obstacle at inf m inside 0.80 m braking distance: ok, 120.0 m"
+plan,108.56,"obstacle at inf m inside 0.79 m braking distance: ok, 120.3 m"
+plan,109.06,"obstacle at inf m inside 0.76 m braking distance: ok, 121.0 m"
+plan,109.56,"obstacle at inf m inside 0.76 m braking distance: ok, 121.3 m"
+plan,110.06,"obstacle at inf m inside 0.87 m braking distance: ok, 121.3 m"
